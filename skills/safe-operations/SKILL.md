@@ -46,6 +46,22 @@ cost of a wrong `--force` is someone's work.
 Before `git checkout` / `reset` / `clean` / `rm -rf` in a repo, run
 `git status` and stash anything uncommitted, including untracked files.
 
+## Never inline a script through a shell
+
+Nested quoting across PowerShell into `node -e` cost three failed attempts and a
+corrupted file in one session. The layers each escape differently and the error
+messages point at the wrong place.
+
+```bash
+# Wrong: quotes get eaten somewhere in the layers
+node -e "const c=f.replace(/x/g,'y');..."
+
+# Right: write the script, then run it
+```
+
+Write the script to a file — a scratchpad is fine — and run the file. It is
+readable, re-runnable, and debuggable.
+
 ## Bulk find-and-replace is dangerous
 
 A repo-wide rename here silently mojibaked every non-ASCII character, which

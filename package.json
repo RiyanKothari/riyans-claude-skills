@@ -32,7 +32,8 @@
     "scorecard": "node tools/scorecard/cli.cjs",
     "backtest": "node tools/outcome/cli.cjs backtest",
     "seed": "node tools/outcome/cli.cjs seed",
-    "verify": "npm run typecheck && npm test",
+    "lint:skills": "node tools/skill-lint/cli.cjs",
+    "verify": "npm run typecheck && npm run lint:skills && npm test",
     "score": "npx ruflo metaharness score"
   },
   "keywords": [

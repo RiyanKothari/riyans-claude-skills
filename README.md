@@ -27,6 +27,21 @@ node bin/harness.js doctor
 Each is a standalone `SKILL.md`. Detail lives in `references/` and loads only
 when needed, so a session that wants routing never pays for the rest.
 
+### Skills are linted like code
+
+Prose fails silently — a malformed frontmatter name stops a skill loading and
+nothing tells you. `npm run lint:skills` runs as part of `npm run verify` and
+checks every skill for:
+
+- frontmatter that parses, with `name` matching the directory
+- a description rich enough to trigger, that actually states *when* to use it
+- `references/` links that resolve
+- mojibake from a bad encoding round-trip
+- credential-shaped strings
+
+It caught a real bug on its first run: a bulk rename had rewritten
+`token-harness`'s frontmatter name, which would have stopped it loading.
+
 ## Profiles
 
 Each hook is a node process (~166 ms measured), so this is a real cost choice.
@@ -82,8 +97,9 @@ is free because both route to the same cheap model. Judge the binary decision.
 ## Development
 
 ```bash
-npm run verify     # typecheck + 150 tests
-npm run coverage   # ~94%
+npm run verify        # typecheck + skill lint + 167 tests
+npm run lint:skills   # validate every SKILL.md on its own
+npm run coverage      # ~94%
 ```
 
 CI runs the suite on Ubuntu and Windows across Node 18/20/22, plus an install

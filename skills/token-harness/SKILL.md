@@ -1,6 +1,6 @@
 ---
-name: riyans-claude-skills
-description: Cut Claude Code token cost by routing cheap tasks to cheap models, recalling only relevant memory under a hard budget, and grading each task on evidence. Use when setting up a project harness, when token or API cost is a concern, when deciding whether to delegate work to a smaller model, when you need memory that persists across sessions without bloating context, or when you want an honest self-review after a task.
+name: token-harness
+description: Cut Claude Code token cost through model-tier routing, budget-capped memory recall, and evidence-gated self-scoring. Use when API cost matters, when deciding whether to delegate work to a cheaper model, when you need memory that survives across sessions without bloating context, or when auditing what is eating the context window.
 ---
 
 # Token Harness
