@@ -1,0 +1,34 @@
+node_modules/
+coverage/
+*.tgz
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Your data, not the harness's. The memory store is built from your real
+# prompts and can contain anything you have ever pasted into Claude Code —
+# never commit it.
+.claude/memory/
+.claude/harness-state.json
+.claude/settings.local.json
+*.bak
+*.bak-*
+
+# Ruflo's generated content — 246 files that are not this project's work and
+# are regenerable with `npx ruflo init`. Committing them would bury the repo.
+.claude-flow/
+.swarm/
+.agents/
+.claude/commands/
+.claude/agents/
+.claude/skills/
+.claude/helpers/*
+.claude/*.db
+.claude/proven-config.json
+.claude/.proven-config-version
+
+# ...except the hooks this project actually owns.
+!.claude/helpers/learning-hook.cjs
+!.claude/helpers/model-route-hook.cjs

@@ -1,0 +1,86 @@
+name: verify
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # The installer branches on process.platform for hook command syntax, so
+    # both branches have to actually run.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['18', '20', '22']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  install-smoke:
+    # Proves the published artefact actually installs, not just that the
+    # source tree passes its own tests.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+
+      - name: install into a scratch project
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/scratch/.claude"
+          echo '{"model":"claude-opus-5"}' > "$RUNNER_TEMP/scratch/.claude/settings.json"
+          cd "$RUNNER_TEMP/scratch"
+          node "$GITHUB_WORKSPACE/bin/harness.js" install --profile strict
+          node "$GITHUB_WORKSPACE/bin/harness.js" doctor
+
+      - name: pre-existing config must survive
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/scratch"
+          grep -q 'claude-opus-5' .claude/settings.json
+
+      - name: uninstall leaves no harness hooks behind
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/scratch"
+          node "$GITHUB_WORKSPACE/bin/harness.js" uninstall
+          ! grep -q 'riyans-claude-skills' .claude/settings.json
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: verify the tarball contains what it claims
+        run: |
+          npm pack --dry-run
+          npm pack --dry-run --json > pack.json
+          node -e "
+            const p = require('./pack.json')[0];
+            const files = p.files.map(f => f.path);
+            const need = ['bin/harness.js', 'skills/riyans-claude-skills/SKILL.md', 'LICENSE'];
+            const missing = need.filter(n => !files.includes(n));
+            if (missing.length) { console.error('missing from tarball:', missing); process.exit(1); }
+            console.log('tarball ok:', files.length, 'files,', p.size, 'bytes');
+          "

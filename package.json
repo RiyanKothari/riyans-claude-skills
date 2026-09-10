@@ -1,0 +1,56 @@
+{
+  "name": "riyans-claude-skills",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "Cut Claude Code token cost: model-tier routing, budget-bounded memory, outcome learning, and evidence-gated self-scoring",
+  "main": "tools/model-router/index.cjs",
+  "bin": {
+    "riyans-claude-skills": "bin/harness.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bin/",
+    "tools/",
+    "skills/",
+    ".claude/helpers/learning-hook.cjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RiyanKothari/riyans-claude-skills.git"
+  },
+  "scripts": {
+    "test": "node --test \"tools/**/*.test.cjs\"",
+    "coverage": "node --test --experimental-test-coverage \"tools/**/*.test.cjs\"",
+    "typecheck": "tsc --noEmit",
+    "route": "node tools/model-router/index.cjs",
+    "mem": "node tools/memory/cli.cjs",
+    "audit": "node tools/context-audit/cli.cjs",
+    "scorecard": "node tools/scorecard/cli.cjs",
+    "backtest": "node tools/outcome/cli.cjs backtest",
+    "seed": "node tools/outcome/cli.cjs seed",
+    "verify": "npm run typecheck && npm test",
+    "score": "npx ruflo metaharness score"
+  },
+  "keywords": [
+    "claude-code",
+    "claude-code-skill",
+    "agent-harness",
+    "model-routing",
+    "token-optimization",
+    "llm-cost",
+    "context-engineering"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "metaharness": "^0.4.16",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
