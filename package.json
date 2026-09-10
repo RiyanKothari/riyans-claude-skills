@@ -23,8 +23,8 @@
     "url": "git+https://github.com/RiyanKothari/riyans-claude-skills.git"
   },
   "scripts": {
-    "test": "node --test \"tools/**/*.test.cjs\"",
-    "coverage": "node --test --experimental-test-coverage \"tools/**/*.test.cjs\"",
+    "test": "node --test",
+    "coverage": "node --test --experimental-test-coverage",
     "typecheck": "tsc --noEmit",
     "route": "node tools/model-router/index.cjs",
     "mem": "node tools/memory/cli.cjs",

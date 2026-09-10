@@ -80,7 +80,14 @@ jobs:
           node -e "
             const p = require('./pack.json')[0];
             const files = p.files.map(f => f.path);
-            const need = ['bin/harness.js', 'skills/riyans-claude-skills/SKILL.md', 'LICENSE'];
+            // The hook lives under a dot-directory, which npm handles only
+            // because package.json lists it explicitly. Guard that.
+            const need = [
+              'bin/harness.js',
+              'skills/token-harness/SKILL.md',
+              'LICENSE',
+              '.claude/helpers/learning-hook.cjs',
+            ];
             const missing = need.filter(n => !files.includes(n));
             if (missing.length) { console.error('missing from tarball:', missing); process.exit(1); }
             console.log('tarball ok:', files.length, 'files,', p.size, 'bytes');
