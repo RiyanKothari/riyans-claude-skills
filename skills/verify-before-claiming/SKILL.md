@@ -49,6 +49,17 @@ it scored 26.5%, and the confusion matrix showed it labelling almost everything
 Where past runs are recorded — transcripts, logs, CI history — that is a free
 labelled dataset. Use it instead of trusting the feeling.
 
+## An exit code is not evidence
+
+Every hook in this project reported "success" across every real session without
+once running. The command was `cmd /c "..."`; under Git Bash, `/c` is rewritten
+to `C:/`, so cmd opened interactively, read the payload as input and exited 0.
+All the manual checks passed — because they ran through PowerShell, not the
+shell Claude Code actually uses.
+
+Test the thing the way it really runs, and assert on output that only the real
+work produces. "It exited cleanly" and "it worked" are different claims.
+
 ## Report honestly
 
 State the number even when it is bad, name the weakest part, and say why. A low

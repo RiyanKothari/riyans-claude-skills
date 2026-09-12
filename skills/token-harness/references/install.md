@@ -22,6 +22,23 @@ There is deliberately **no PostToolUse hook** in any profile. It would spawn one
 process per tool call, and real turns average 12.6 tool calls. The `finalize`
 hook reads the transcript at Stop instead, which already holds the same facts.
 
+## Hooks must run under bash
+
+Claude Code runs hook commands through a shell — Git Bash on Windows. The
+installer therefore writes a shell-neutral command: `node "<path>" <mode>` with
+forward slashes. An earlier `cmd /c` form exited 0 under bash without running
+anything, so every hook reported success while doing nothing.
+
+An exit code is not evidence a hook works. Run its exact command through bash
+and look for the hook's own output:
+
+```bash
+echo '{"context_tokens":400000}' | bash -c 'node "/path/to/learning-hook.cjs" core'
+```
+
+Hook settings are read when a session starts, so after installing or fixing
+hooks, start a new session before expecting them to fire.
+
 ## What install touches
 
 - Copies `skills/token-harness/` into `<claude-dir>/skills/`
