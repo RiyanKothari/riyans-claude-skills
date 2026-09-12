@@ -54,7 +54,7 @@
           },
           {
             "type": "command",
-            "command": "cmd /c \"IF EXIST \"%CLAUDE_PROJECT_DIR%\\.claude\\helpers\\learning-hook.cjs\" (node \"%CLAUDE_PROJECT_DIR%\\.claude\\helpers\\learning-hook.cjs\" recall) ELSE (exit 0)\"",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/learning-hook.cjs\" recall",
             "timeout": 8000
           }
         ]
@@ -65,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cmd /c \"IF EXIST \"%CLAUDE_PROJECT_DIR%\\.claude\\helpers\\learning-hook.cjs\" (node \"%CLAUDE_PROJECT_DIR%\\.claude\\helpers\\learning-hook.cjs\" core) ELSE (exit 0)\"",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/learning-hook.cjs\" core",
             "timeout": 6000
           },
           {
@@ -97,7 +97,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cmd /c \"IF EXIST \"%CLAUDE_PROJECT_DIR%\\.claude\\helpers\\learning-hook.cjs\" (node \"%CLAUDE_PROJECT_DIR%\\.claude\\helpers\\learning-hook.cjs\" finalize) ELSE (exit 0)\"",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/learning-hook.cjs\" finalize",
             "timeout": 6000
           },
           {

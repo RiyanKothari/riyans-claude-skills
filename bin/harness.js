@@ -77,13 +77,12 @@ function copyDir(src, dest) {
   }
 }
 
+// Shell-neutral on purpose: Claude Code runs Windows hooks through Git Bash, where
+// MSYS rewrites `cmd /c` to `cmd C:/` — cmd then runs interactively, exits 0, and
+// every hook reports success without executing.
 function hookCommand(mode) {
-  const script = path.join(REPO, '.claude', 'helpers', 'learning-hook.cjs');
-  // Quoted for paths with spaces; degrades to a no-op if the file is gone, so a
-  // half-removed install can never break prompt submission.
-  return process.platform === 'win32'
-    ? `cmd /c "IF EXIST "${script}" (node "${script}" ${mode}) ELSE (exit 0)"`
-    : `[ -f '${script}' ] && node '${script}' ${mode} || true`;
+  const script = path.join(REPO, '.claude', 'helpers', 'learning-hook.cjs').replace(/\\/g, '/');
+  return `node "${script}" ${mode}`;
 }
 
 function backupSettings(settingsFile) {

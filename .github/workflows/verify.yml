@@ -57,6 +57,18 @@ jobs:
           cd "$RUNNER_TEMP/scratch"
           grep -q 'claude-opus-5' .claude/settings.json
 
+      # Exit code alone proves nothing: a hook the shell cannot parse still exits
+      # 0. Run the installed command through bash and require the hook's output.
+      - name: installed hooks actually execute
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/scratch"
+          CMD=$(node -e "const s=require('./.claude/settings.json');console.log(s.hooks.SessionStart.flatMap(g=>g.hooks).find(h=>h.command.includes('learning-hook')).command)")
+          echo "hook command: $CMD"
+          OUT=$(echo '{"context_tokens":400000}' | CLAUDE_PROJECT_DIR="$PWD" bash -c "$CMD")
+          echo "$OUT"
+          echo "$OUT" | grep -q '\[context\]'
+
       - name: uninstall leaves no harness hooks behind
         shell: bash
         run: |
