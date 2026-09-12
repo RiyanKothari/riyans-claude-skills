@@ -127,6 +127,26 @@ test('unrelated settings keys survive a hook merge', () => {
   assert.deepStrictEqual(settings.env, { FOO: '1' });
 });
 
+function commands(settings) {
+  return Object.values(settings.hooks || {}).flat().flatMap((g) => g.hooks.map((h) => h.command));
+}
+
+test('a global install marks its hooks so they stand down inside the harness repo', () => {
+  /** @type {any} */
+  const s = {};
+  addHooks(s, PROFILES.standard.hooks, { global: true });
+  const cmds = commands(s);
+  assert.ok(cmds.length > 0);
+  assert.ok(cmds.every((c) => c.endsWith(' --global')), cmds.join('\n'));
+});
+
+test('a project install does not mark its hooks global', () => {
+  /** @type {any} */
+  const s = {};
+  addHooks(s, PROFILES.standard.hooks);
+  assert.ok(commands(s).every((c) => !c.includes('--global')));
+});
+
 test('no hook is registered on PostToolUse', () => {
   // It would spawn one process per tool call. This is a load-bearing absence.
   const events = Object.values(HOOK_SPEC).map((s) => s.event);

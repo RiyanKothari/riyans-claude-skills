@@ -86,7 +86,9 @@ function gatherTurnEvidence(transcriptPath) {
 
   const files = turn.files || [];
   const testsAdded = files.filter((f) => /\.test\.[cm]?js$/.test(f)).length;
-  const docsUpdated = files.some((f) => /(README|CLAUDE)\.md$/i.test(f));
+  // In a skills repo most docs are SKILL.md and references/, not just README.
+  // This scored a turn that updated two skill docs as "no docs".
+  const docsUpdated = files.some((f) => /\.md$/i.test(f) && !/[\\/]memory[\\/]/.test(f));
 
   const out = {
     testsAdded,

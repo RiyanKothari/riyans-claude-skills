@@ -4,23 +4,47 @@
 /**
  * Closes the loop between routing and outcomes.
  *
- *   recall   (UserPromptSubmit) - start a turn, surface memory + routing advice
- *   observe  (PostToolUse)      - count what the turn actually did
- *   finalize (Stop)             - score the turn and write it back as evidence
+ *   core     (SessionStart)     - fixed core memory, last-session handoff, compaction advice
+ *   recall   (UserPromptSubmit) - relevant memory and routing advice, under a token cap
+ *   finalize (Stop)             - score the turn from the transcript and store it as evidence
  *
  * Every mode must exit 0 and stay silent on failure: a hook that throws breaks
  * every prompt submission, and one that chatters costs more than it saves.
+ *
+ * `--global` marks an invocation from ~/.claude/settings.json. Tools always load
+ * from this harness repo; project data goes under ~/.claude so prompts are never
+ * written into another repo's working tree; and inside this repo the global copy
+ * stands down, because the project settings already run the hook.
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
+const HARNESS_ROOT = path.join(__dirname, '..', '..');
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-const STATE = path.join(ROOT, '.claude', 'memory', 'turn-state.json');
-const DB = process.env.SMART_MEMORY_PATH
-  || path.join(ROOT, '.claude', 'memory', 'records.jsonl');
+const GLOBAL = process.argv.includes('--global');
 
-const HANDOFF = path.join(ROOT, '.claude', 'memory', 'handoff.json');
+function samePath(a, b) {
+  const norm = (p) => path.resolve(p);
+  // Windows paths are case-insensitive, and CLAUDE_PROJECT_DIR's casing is not guaranteed.
+  return process.platform === 'win32'
+    ? norm(a).toLowerCase() === norm(b).toLowerCase()
+    : norm(a) === norm(b);
+}
+
+function dataDir() {
+  if (!GLOBAL) return path.join(ROOT, '.claude', 'memory');
+  const key = path.resolve(ROOT).replace(/[:\\/]+/g, '-').replace(/^-+|-+$/g, '');
+  return path.join(os.homedir(), '.claude', 'token-harness', 'projects', key);
+}
+
+const DATA = dataDir();
+const STATE = path.join(DATA, 'turn-state.json');
+const DB = process.env.SMART_MEMORY_PATH || path.join(DATA, 'records.jsonl');
+const HANDOFF = path.join(DATA, 'handoff.json');
+// Pinned policy lives in the harness repo's own store and follows every project.
+const HARNESS_DB = path.join(HARNESS_ROOT, '.claude', 'memory', 'records.jsonl');
 
 const RECALL_BUDGET = Number(process.env.SMART_MEMORY_BUDGET || 350);
 // The core is injected into every session unconditionally, so its ceiling is
@@ -30,11 +54,15 @@ const COMPACT_REMIND_EVERY = Number(process.env.SMART_COMPACT_REMIND || 60000);
 const MAX_NEIGHBORS = 5;
 
 function req(rel) {
-  try {
-    return require(path.join(ROOT, 'tools', rel));
-  } catch {
-    return null;
+  // Harness repo first, so the hook works in projects that have no tools/ of their own.
+  for (const base of [HARNESS_ROOT, ROOT]) {
+    try {
+      return require(path.join(base, 'tools', rel));
+    } catch {
+      // Fall through to the next location.
+    }
   }
+  return null;
 }
 
 function readStdin() {
@@ -60,14 +88,6 @@ function parseInput() {
   }
 }
 
-function loadState() {
-  try {
-    return JSON.parse(fs.readFileSync(STATE, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
 function saveState(s) {
   try {
     fs.mkdirSync(path.dirname(STATE), { recursive: true });
@@ -77,11 +97,11 @@ function saveState(s) {
   }
 }
 
-function openStore() {
+function openStore(dbPath = DB) {
   const mod = req('memory/store.cjs');
   if (!mod) return null;
   try {
-    return new mod.MemoryStore({ path: DB }).load();
+    return new mod.MemoryStore({ path: dbPath }).load();
   } catch {
     return null;
   }
@@ -124,10 +144,6 @@ function modeRecall() {
     prompt: prompt.slice(0, 500),
     promptId: input.prompt_id || input.promptId || null,
     startedAt: Date.now(),
-    edits: 0,
-    commands: 0,
-    reads: 0,
-    files: [],
   });
 
   const store = openStore();
@@ -203,7 +219,7 @@ function compactAdvice(input, handoff) {
 function readScorecards() {
   try {
     return fs
-      .readFileSync(path.join(ROOT, '.claude', 'memory', 'scorecards.jsonl'), 'utf8')
+      .readFileSync(path.join(DATA, 'scorecards.jsonl'), 'utf8')
       .split('\n')
       .filter(Boolean)
       .map((l) => { try { return JSON.parse(l); } catch { return null; } })
@@ -230,6 +246,26 @@ function writeHandoff(h) {
   }
 }
 
+/** Pinned and earned core records: this project's first, then the harness repo's. */
+function coreTexts() {
+  const stores = [openStore(DB)];
+  if (!samePath(HARNESS_DB, DB)) stores.push(openStore(HARNESS_DB));
+
+  const seen = new Set();
+  const kept = [];
+  let used = 0;
+  for (const store of stores) {
+    if (!store) continue;
+    for (const r of store.coreRecords({ budgetTokens: CORE_BUDGET })) {
+      if (seen.has(r.text) || used + r.tokens > CORE_BUDGET) continue;
+      seen.add(r.text);
+      used += r.tokens;
+      kept.push(r.text);
+    }
+  }
+  return kept;
+}
+
 /**
  * SessionStart. The fixed core: the same bounded block every new session gets,
  * regardless of what is asked. Pinned records are the standing policy that must
@@ -237,13 +273,10 @@ function writeHandoff(h) {
  */
 function modeCore() {
   const input = parseInput();
-  const store = openStore();
   const out = [];
 
-  if (store) {
-    const core = store.coreRecords({ budgetTokens: CORE_BUDGET });
-    if (core.length) out.push(`[core] ${core.map((r) => r.text).join(' | ')}`);
-  }
+  const core = coreTexts();
+  if (core.length) out.push(`[core] ${core.join(' | ')}`);
 
   const h = readHandoff();
   if (h && h.summary) {
@@ -326,6 +359,10 @@ function modeFinalize() {
   try { fs.unlinkSync(STATE); } catch {}
   process.exit(0);
 }
+
+// Inside the harness repo the project settings already run this hook; a global
+// copy firing as well would double every outcome record.
+if (GLOBAL && samePath(ROOT, HARNESS_ROOT)) process.exit(0);
 
 const mode = process.argv[2];
 if (mode === 'core') modeCore();

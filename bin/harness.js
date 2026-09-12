@@ -80,9 +80,11 @@ function copyDir(src, dest) {
 // Shell-neutral on purpose: Claude Code runs Windows hooks through Git Bash, where
 // MSYS rewrites `cmd /c` to `cmd C:/` — cmd then runs interactively, exits 0, and
 // every hook reports success without executing.
-function hookCommand(mode) {
+function hookCommand(mode, opts = {}) {
   const script = path.join(REPO, '.claude', 'helpers', 'learning-hook.cjs').replace(/\\/g, '/');
-  return `node "${script}" ${mode}`;
+  // --global lets the hook stand down inside this repo, whose project settings
+  // already run it, instead of firing twice per event.
+  return `node "${script}" ${mode}${opts.global ? ' --global' : ''}`;
 }
 
 function backupSettings(settingsFile) {
@@ -93,14 +95,14 @@ function backupSettings(settingsFile) {
 }
 
 /** Merge without clobbering: the user's existing hooks are left untouched. */
-function addHooks(settings, modes) {
+function addHooks(settings, modes, opts = {}) {
   settings.hooks = settings.hooks || {};
   const added = [];
 
   for (const mode of modes) {
     const spec = HOOK_SPEC[mode];
     if (!spec) continue;
-    const cmd = hookCommand(mode);
+    const cmd = hookCommand(mode, opts);
     settings.hooks[spec.event] = settings.hooks[spec.event] || [];
 
     // Match on our own tag, not on the command string: JSON escaping makes
@@ -157,7 +159,7 @@ function install(opts) {
 
   const settings = read.value;
   const backup = backupSettings(settingsFile);
-  const added = addHooks(settings, profile.hooks);
+  const added = addHooks(settings, profile.hooks, { global: opts.global });
   writeJson(settingsFile, settings);
 
   writeJson(statePath(dir), {

@@ -81,3 +81,72 @@ test('the old cmd /c form is dead under bash', { skip: process.platform !== 'win
   assert.doesNotMatch(r.stdout, /\[context\]/, 'but never runs the hook');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// A throwaway home directory, so global-mode writes never touch the real ~/.claude.
+function fakeHome() {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hook-home-'));
+  return { home, env: { HOME: home, USERPROFILE: home } };
+}
+
+function runHook(script, args, cwd, input, extraEnv) {
+  return spawnSync(process.execPath, [script, ...args], {
+    input,
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, ...extraEnv },
+  });
+}
+
+const HOOK = path.join(ROOT, '.claude', 'helpers', 'learning-hook.cjs');
+
+test('a --global hook stands down inside the harness repo', () => {
+  // Project settings already run it here; firing twice would double every outcome.
+  const { home, env } = fakeHome();
+  const r = runHook(HOOK, ['core', '--global'], ROOT, PAYLOAD, env);
+  assert.strictEqual(r.stdout.trim(), '');
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('a --global hook runs in any other project', () => {
+  const dir = sandbox();
+  const { home, env } = fakeHome();
+  const r = runHook(HOOK, ['core', '--global'], dir, PAYLOAD, env);
+  assert.match(r.stdout, /\[context\]/);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('global mode never writes project data into the project working tree', () => {
+  // Memory is built from prompts; it must not land where another repo could commit it.
+  const dir = sandbox();
+  const { home, env } = fakeHome();
+  runHook(HOOK, ['core', '--global'], dir, PAYLOAD, env);
+
+  assert.ok(!fs.existsSync(path.join(dir, '.claude', 'memory')), 'nothing written inside the project');
+  const projects = path.join(home, '.claude', 'token-harness', 'projects');
+  assert.strictEqual(fs.readdirSync(projects).length, 1, 'data kept under ~/.claude instead');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('pinned policy in the harness store reaches every project', () => {
+  // Build a stand-in harness repo so the test never depends on real memory.
+  const harness = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-harness-'));
+  fs.mkdirSync(path.join(harness, '.claude', 'helpers'), { recursive: true });
+  fs.mkdirSync(path.join(harness, 'tools', 'memory'), { recursive: true });
+  const hook = path.join(harness, '.claude', 'helpers', 'learning-hook.cjs');
+  fs.copyFileSync(HOOK, hook);
+  fs.copyFileSync(path.join(ROOT, 'tools', 'memory', 'store.cjs'), path.join(harness, 'tools', 'memory', 'store.cjs'));
+
+  const { MemoryStore } = require('../memory/store.cjs');
+  const store = new MemoryStore({ path: path.join(harness, '.claude', 'memory', 'records.jsonl') });
+  store.add({ text: 'standing policy that follows every project', pinned: true });
+  store.save();
+
+  const project = sandbox();
+  const { home, env } = fakeHome();
+  const r = runHook(hook, ['core', '--global'], project, JSON.stringify({ context_tokens: 1000 }), env);
+  assert.match(r.stdout, /\[core\] standing policy that follows every project/);
+
+  for (const d of [harness, project, home]) fs.rmSync(d, { recursive: true, force: true });
+});
