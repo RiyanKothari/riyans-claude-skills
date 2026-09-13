@@ -41,6 +41,14 @@ test('claiming correctness without running tests is capped', () => {
   assert.ok(!b.capped);
 });
 
+test('a single failing test caps correctness at half marks', () => {
+  // Regression: 217/218 scored 10/10 on a commit that broke CI.
+  const r = score({ evidence: { testsPass: 217, testsTotal: 218 } });
+  const c = r.breakdown.find((b) => b.key === 'correctness');
+  assert.ok(c);
+  assert.ok(c.value <= 5, `a red suite scored ${c.value}/10`);
+});
+
 test('failing tests drag correctness down proportionally', () => {
   const r = score({ evidence: { testsPass: 5, testsTotal: 10 } });
   const c = r.breakdown.find((b) => b.key === 'correctness');

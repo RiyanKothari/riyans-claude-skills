@@ -63,6 +63,11 @@ test('the committed project hooks actually run through bash', { skip: !bashCanRu
   const helpers = path.join(dir, '.claude', 'helpers');
   fs.mkdirSync(helpers, { recursive: true });
   fs.copyFileSync(path.join(ROOT, '.claude', 'helpers', 'learning-hook.cjs'), path.join(helpers, 'learning-hook.cjs'));
+  // Mirror the real layout: the hook loads its compaction logic from tools/.
+  fs.mkdirSync(path.join(dir, 'tools'), { recursive: true });
+  for (const f of ['compact.cjs', 'config.cjs']) {
+    fs.copyFileSync(path.join(ROOT, 'tools', f), path.join(dir, 'tools', f));
+  }
 
   const settings = JSON.parse(fs.readFileSync(path.join(ROOT, '.claude', 'settings.json'), 'utf8'));
   const core = (settings.hooks.SessionStart || [])

@@ -81,7 +81,10 @@ function fromEvidence(ev = {}) {
   const out = {};
 
   if (typeof ev.testsPass === 'number' && typeof ev.testsTotal === 'number' && ev.testsTotal > 0) {
-    out.correctness = clamp((ev.testsPass / ev.testsTotal) * 10);
+    const ratio = clamp((ev.testsPass / ev.testsTotal) * 10);
+    // A red suite is a binary fact, not a percentage: 217/218 once scored 10/10
+    // on a commit that failed CI. Any failure caps correctness at half marks.
+    out.correctness = ev.testsPass === ev.testsTotal ? ratio : Math.min(5, ratio);
     out.correctnessBacked = true;
   }
 
