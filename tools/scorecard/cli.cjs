@@ -65,17 +65,24 @@ function gatherEvidence() {
   return ev;
 }
 
-function newestTranscript() {
+/**
+ * This session's own transcript: `<projects>/<project>/<session id>.jsonl`.
+ *
+ * It used to take the newest transcript across every project, so whenever another
+ * session wrote last, this turn was scored on that session's work: a turn that
+ * shipped three test files and a SKILL.md scored durability 0, and efficiency was
+ * inflated the same way. No session id means no turn evidence, which leaves those
+ * parameters unbacked instead of guessed.
+ *
+ * @param {Record<string, string|undefined>} [env]
+ * @param {string} [projectsDir]
+ */
+function sessionTranscript(env = process.env, projectsDir) {
+  const id = String(env.CLAUDE_CODE_SESSION_ID || '').replace(/[^A-Za-z0-9_-]/g, '');
+  if (!id) return null;
   try {
     const { findTranscripts } = require('../outcome/transcript.cjs');
-    const files = findTranscripts();
-    let best = null;
-    let bestAt = 0;
-    for (const f of files) {
-      const m = fs.statSync(f).mtimeMs;
-      if (m > bestAt) { bestAt = m; best = f; }
-    }
-    return best;
+    return findTranscripts(projectsDir).find((f) => path.basename(f) === `${id}.jsonl`) || null;
   } catch {
     return null;
   }
@@ -87,9 +94,12 @@ function newestTranscript() {
  * The mtime version used a one-hour window, which miscounts on a long or
  * resumed session. The transcript names exactly which files this turn touched
  * and how many tools it burned, so no time heuristic is needed.
+ *
+ * @param {string|null} [transcriptPath]
+ * @returns {{testsAdded?: number, docsUpdated?: boolean, toolCount?: number, tier?: string}}
  */
 function gatherTurnEvidence(transcriptPath) {
-  const p = transcriptPath || newestTranscript();
+  const p = transcriptPath || sessionTranscript();
   if (!p) return {};
 
   let turn;
@@ -205,4 +215,6 @@ function main() {
   for (const p of PARAMETERS) console.log(`  ${p.key.padEnd(14)} w=${p.weight}  ${p.asks}`);
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { sessionTranscript, gatherTurnEvidence, pickTestCommand };

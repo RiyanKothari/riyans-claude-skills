@@ -59,7 +59,11 @@ of resetting.
 ## When a parameter scores badly
 
 Check whether the **measurement** is broken before assuming the work was. This
-rubric has caught its own author twice: durability once scored 0/10 because
-nothing measured it, and a later mtime-based version inflated it by counting the
-previous turn's work. The fix both times was better measurement, not a
-self-reported flag.
+rubric has caught its own author three times: durability once scored 0/10 because
+nothing measured it; a later mtime-based version inflated it by counting the
+previous turn's work; and turn evidence was read from the newest transcript in
+*any* project, so a turn that shipped three test files and a SKILL.md scored
+durability 0 (and inflated efficiency) whenever another session wrote last. That
+last one showed up as "durability, recurring weak spot (15x)" — a habit that was
+really a measurement bug. Evidence now comes only from this session's own
+transcript. The fix every time was better measurement, not a self-reported flag.
