@@ -50,7 +50,7 @@ test('installing twice does not duplicate hooks', () => {
   const settings = {};
   const first = addHooks(settings, PROFILES.strict.hooks);
   const second = addHooks(settings, PROFILES.strict.hooks);
-  assert.strictEqual(first.length, 3);
+  assert.strictEqual(first.length, PROFILES.strict.hooks.length);
   assert.strictEqual(second.length, 0, 'second install should be a no-op');
 });
 
@@ -63,7 +63,7 @@ test('uninstall removes only our hooks', () => {
   addHooks(settings, PROFILES.strict.hooks);
   const removed = removeHooks(settings);
 
-  assert.strictEqual(removed, 3);
+  assert.strictEqual(removed, PROFILES.strict.hooks.length);
   const json = JSON.stringify(settings);
   assert.match(json, /user-hook/, 'user hook must survive uninstall');
   assert.ok(!json.includes(MARKER), 'no harness hooks should remain');
@@ -81,9 +81,18 @@ test('emptied hook events are cleaned up rather than left as dead keys', () => {
   assert.strictEqual(settings.hooks.SessionStart, undefined);
 });
 
-test('each hook mode targets a distinct lifecycle event', () => {
-  const events = Object.values(HOOK_SPEC).map((s) => s.event);
-  assert.strictEqual(new Set(events).size, events.length);
+test('only Stop is shared, and only by loop and finalize', () => {
+  // Each hook is a node spawn per event. Stop carries two on purpose: standard
+  // needs the loop without finalize's outcome capture. Any other overlap is an
+  // accidental double spawn.
+  const byEvent = {};
+  for (const [mode, spec] of Object.entries(HOOK_SPEC)) {
+    (byEvent[spec.event] = byEvent[spec.event] || []).push(mode);
+  }
+  for (const [event, modes] of Object.entries(byEvent)) {
+    if (event === 'Stop') assert.deepStrictEqual(modes.sort(), ['finalize', 'loop']);
+    else assert.strictEqual(modes.length, 1, `${event} is shared by ${modes.join(', ')}`);
+  }
 });
 
 test('a settings file with a UTF-8 BOM still parses', () => {

@@ -23,6 +23,7 @@ node bin/harness.js doctor
 | [safe-operations](skills/safe-operations/) | Config writes, deletes, bulk edits, installers — the rules that prevent data loss |
 | [secrets-hygiene](skills/secrets-hygiene/) | Redact at write time; derived caches leak too; what to do after a leak |
 | [debug-systematically](skills/debug-systematically/) | Probe real state instead of theorising; fix causes, not symptoms |
+| [ralph-loop](skills/ralph-loop/) | Re-feed one prompt at every stop until a completion promise is true or a hard cap is hit |
 
 Each is a standalone `SKILL.md`. Detail lives in `references/` and loads only
 when needed, so a session that wants routing never pays for the rest.
@@ -49,8 +50,11 @@ Each hook is a node process (~166 ms measured), so this is a real cost choice.
 | Profile | Hooks | Per-turn | Use when |
 |---|---|---|---|
 | `minimal` | none | zero | You want the skills and CLI only |
-| `standard` | core, recall | ~1 spawn | Default. Memory works automatically |
-| `strict` | + finalize | ~2 spawns | You want the router to learn from outcomes |
+| `standard` | core, recall, loop | ~2 spawns | Default. Memory and `/ralph-loop` work automatically |
+| `strict` | + finalize | ~3 spawns | You want the router to learn from outcomes |
+
+The `loop` hook runs at every stop but prints nothing and costs no tokens unless
+this session started a loop.
 
 No profile registers a `PostToolUse` hook. That absence is load-bearing and has
 a test asserting it.
@@ -65,6 +69,7 @@ rcskills mem recall "question"      # what do we already know?
 rcskills audit                      # what is eating my context?
 rcskills backtest                   # is the router actually accurate?
 rcskills scorecard trend            # am I improving or repeating mistakes?
+rcskills loop start 'task' --completion-promise 'DONE' --max-iterations 10
 ```
 
 To use everything in every project:
@@ -140,7 +145,7 @@ is free because both route to the same cheap model. Judge the binary decision.
 ## Development
 
 ```bash
-npm run verify        # typecheck + skill lint + 245 tests
+npm run verify        # typecheck + skill lint + 260 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```

@@ -15,13 +15,14 @@ const MARKER = 'riyans-claude-skills';
  */
 const PROFILES = {
   minimal: { hooks: [], desc: 'skill only, no hooks, zero per-turn overhead' },
-  standard: { hooks: ['core', 'recall'], desc: 'fixed core at session start + per-prompt recall' },
-  strict: { hooks: ['core', 'recall', 'finalize'], desc: 'standard + outcome capture (the learning loop)' },
+  standard: { hooks: ['core', 'recall', 'loop'], desc: 'fixed core at session start + per-prompt recall + ralph loop' },
+  strict: { hooks: ['core', 'recall', 'loop', 'finalize'], desc: 'standard + outcome capture (the learning loop)' },
 };
 
 const HOOK_SPEC = {
   core: { event: 'SessionStart', timeout: 6000 },
   recall: { event: 'UserPromptSubmit', timeout: 8000 },
+  loop: { event: 'Stop', timeout: 6000 },
   finalize: { event: 'Stop', timeout: 6000 },
 };
 
@@ -271,6 +272,7 @@ const TOOLS = {
   seed: 'tools/outcome/cli.cjs',
   lint: 'tools/skill-lint/cli.cjs',
   config: 'tools/config.cjs',
+  loop: 'tools/loop.cjs',
 };
 
 function runTool(name, rest) {
@@ -286,7 +288,7 @@ function runTool(name, rest) {
 
 function usage() {
   console.log('Usage: rcskills <install|doctor|status|uninstall> [--profile P] [--global]');
-  console.log('       rcskills <route|mem|scorecard|audit|backtest|seed|lint|config> [args]');
+  console.log('       rcskills <route|mem|scorecard|audit|backtest|seed|lint|config|loop> [args]');
   console.log('\nProfiles:');
   for (const [k, v] of Object.entries(PROFILES)) {
     console.log(`  ${k.padEnd(9)} ${v.desc}`);

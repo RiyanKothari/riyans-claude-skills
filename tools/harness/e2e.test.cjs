@@ -220,6 +220,7 @@ test('install then uninstall then install again ends up clean', () => {
 
   const groups = Object.values(settings(dir).hooks || {}).flat();
   const ours = groups.filter((g) => g && g['riyans-claude-skills']);
-  assert.strictEqual(ours.length, 3, 'exactly one hook group per mode');
+  const modes = require('../../bin/harness.js').PROFILES.strict.hooks.length;
+  assert.strictEqual(ours.length, modes, 'exactly one hook group per mode');
   cleanup(dir);
 });

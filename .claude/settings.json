@@ -27,6 +27,15 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/learning-hook.cjs\" loop",
+            "timeout": 6000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/learning-hook.cjs\" finalize",
             "timeout": 6000
           }

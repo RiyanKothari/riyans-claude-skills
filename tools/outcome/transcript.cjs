@@ -253,6 +253,7 @@ module.exports = {
   lastTurn,
   lastContextUsage,
   recentActivity,
+  readTailLines,
   findTranscripts,
   isHumanPrompt,
   PROJECTS_DIR,

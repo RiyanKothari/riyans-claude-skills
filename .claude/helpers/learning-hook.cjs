@@ -6,6 +6,7 @@
  *
  *   core     (SessionStart)     - fixed core memory, last-session handoff, compaction prompt
  *   recall   (UserPromptSubmit) - relevant memory, routing advice and compaction prompt
+ *   loop     (Stop)             - keep a `rcskills loop` going until its promise or cap
  *   finalize (Stop)             - score the turn from the transcript and store it as evidence
  *
  * Every mode must exit 0 and stay silent on failure: a hook that throws breaks
@@ -362,6 +363,27 @@ function modeFinalize() {
   process.exit(0);
 }
 
+/**
+ * Stop. Keeps a `rcskills loop` running: feeds its prompt back until the
+ * completion promise is genuinely written or the iteration cap is reached.
+ * Silent when this session has no loop, so it costs one spawn and no tokens.
+ */
+function modeLoop() {
+  const input = parseInput();
+  const loop = req('loop.cjs');
+  let decision = null;
+  try {
+    decision = loop ? loop.decideStop(input) : null;
+  } catch {
+    decision = null;
+  }
+  if (decision) {
+    const out = decision.block || { systemMessage: `[loop] ${decision.stop}` };
+    process.stdout.write(`${JSON.stringify(out)}\n`);
+  }
+  process.exit(0);
+}
+
 // Inside the harness repo the project settings already run this hook; a global
 // copy firing as well would double every outcome record.
 if (GLOBAL && samePath(ROOT, HARNESS_ROOT)) process.exit(0);
@@ -369,5 +391,6 @@ if (GLOBAL && samePath(ROOT, HARNESS_ROOT)) process.exit(0);
 const mode = process.argv[2];
 if (mode === 'core') modeCore();
 else if (mode === 'recall') modeRecall();
+else if (mode === 'loop') modeLoop();
 else if (mode === 'finalize') modeFinalize();
 else process.exit(0);
