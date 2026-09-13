@@ -13,7 +13,7 @@ const { hookCommand } = require('../../bin/harness.js');
 // to execute the command and look for the hook's own output.
 
 const ROOT = path.join(__dirname, '..', '..');
-const PAYLOAD = JSON.stringify({ context_tokens: 400000, estimated_cache_write_usd: 4 });
+const PAYLOAD = JSON.stringify({ context_tokens: 600000, estimated_cache_write_usd: 4 });
 
 // Isolate from the user's real settings, so `rcskills config compact off` on this
 // machine cannot make these tests fail.

@@ -61,7 +61,7 @@ Pick the cheapest model that can do the task correctly. Check any prompt with
 | moderate | ordinary bounded feature work | sonnet | Handle inline |
 | complex | architecture, refactor, debugging, tradeoffs | opus | Handle inline |
 
-- Delegate trivial/simple work to a `haiku` subagent — ~93% cheaper per call than opus.
+- Delegate trivial/simple work to a `haiku` subagent — roughly 77–89% cheaper per call than opus, depending on how much context is cached.
 - Never downgrade an ambiguous task; the router escalates a tier on low confidence, so should you.
 - Reasoning prompts (why / how should / tradeoff) never route to haiku.
 - If the session model outclasses the work for a whole stretch of tasks, tell the user to switch with `/model`.

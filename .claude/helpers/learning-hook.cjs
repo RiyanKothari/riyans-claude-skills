@@ -143,37 +143,37 @@ function findNeighbors(store, prompt, scoreMod) {
     .filter(Boolean);
 }
 
-/** What one more request costs just to re-read the context, at cache-read rates. */
-function requestCost(tokens, model) {
-  const costMod = req('model-router/cost.cjs');
-  const rate = costMod && model && costMod.PRICING[model];
-  return rate ? (tokens / 1e6) * rate.in * costMod.CACHE_READ_MULTIPLIER : null;
+function sessionActivity(input, currentPrompt) {
+  const tsMod = req('outcome/transcript.cjs');
+  const tPath = input.transcript_path || input.transcriptPath;
+  if (!tsMod || !tPath) return null;
+  try {
+    return tsMod.recentActivity(tPath, { currentPrompt });
+  } catch {
+    return null;
+  }
 }
 
 /**
- * The compaction prompt, governed by `rcskills config compact ...`. Mid-session
- * this is the only way the user hears about context growth: SessionStart fires
- * once, but a long session keeps growing long after it.
+ * The compaction prompt, governed by `rcskills config compact ...`. The prompt
+ * point is worked out per session from the model, where the work is and how fast
+ * context is growing — SessionStart alone could never notice a session growing.
  */
-function compactPrompt(tokens, input, costs) {
+function compactPrompt(tokens, input, activity, extra = {}) {
   const compactMod = req('compact.cjs');
   const configMod = req('config.cjs');
   if (!compactMod || !configMod || !tokens) return null;
 
-  const state = readJsonFile(COMPACT_STATE);
   const result = compactMod.adviseCompact({
     tokens,
     sessionId: input.session_id || null,
-    state,
+    state: readJsonFile(COMPACT_STATE),
     settings: configMod.load().compact,
-    costPerRequestUsd: costs.costPerRequestUsd || null,
-    rewriteUsd: costs.rewriteUsd || null,
+    model: activity ? activity.model : null,
+    phase: activity ? activity.phase : null,
+    rewriteUsd: extra.rewriteUsd || null,
   });
-
-  const next = result.state;
-  if (!state || state.sessionId !== next.sessionId || state.advisedAt !== next.advisedAt) {
-    writeJsonFile(COMPACT_STATE, next);
-  }
+  writeJsonFile(COMPACT_STATE, result.state);
   return result.message;
 }
 
@@ -223,13 +223,9 @@ function modeRecall() {
     }
   }
 
-  const tsMod = req('outcome/transcript.cjs');
-  const tPath = input.transcript_path || input.transcriptPath;
-  const usage = tsMod && tPath ? tsMod.lastContextUsage(tPath) : null;
-  if (usage) {
-    const advice = compactPrompt(usage.tokens, input, {
-      costPerRequestUsd: requestCost(usage.tokens, usage.model),
-    });
+  const activity = sessionActivity(input, prompt);
+  if (activity && activity.tokens) {
+    const advice = compactPrompt(activity.tokens, input, activity);
     if (advice) out.push(advice);
   }
 
@@ -300,7 +296,7 @@ function modeCore() {
     out.push(`[scorecard] last ${last.total}/100, weakest ${last.weakest}.${repeat}`);
   }
 
-  const advice = compactPrompt(Number(input.context_tokens || 0), input, {
+  const advice = compactPrompt(Number(input.context_tokens || 0), input, sessionActivity(input, ''), {
     rewriteUsd: Number(input.estimated_cache_write_usd || 0) || null,
   });
   if (advice) out.push(advice);

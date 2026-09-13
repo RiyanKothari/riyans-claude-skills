@@ -56,9 +56,11 @@ ranks offenders by that leverage.
 **7. Prompt the user to compact at phase boundaries, never mid-implementation.**
 When a `[context]` line appears, tell the user in one sentence and suggest
 `/compact <what to keep>` at the next boundary: research to plan, plan to build,
-or after a failed approach. Save decisions to memory first. By default it prompts
-at 160k tokens and again every 100k of growth; tune or silence it with
-`rcskills config compact <on|off|tokens>`.
+or after a failed approach. Save decisions to memory first. The prompt point is
+worked out per session: the lower of where re-reading costs $0.15 per request on
+the current model and 40% of its context window, brought forward at a natural
+break or fast growth, pushed back mid-task. Tune it with
+`rcskills config compact <on|off|dynamic|tokens>` and `compact-budget <usd>`.
 
 ## Details on demand
 

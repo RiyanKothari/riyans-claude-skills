@@ -80,33 +80,45 @@ from your prompts, and must not end up committed to another repository.
 
 ## Settings
 
-Compaction prompts are on by default. Once a session's context passes 160k
-tokens, the next message carries a `[context]` line asking Claude to suggest
-`/compact` to you at the next phase boundary. It repeats only after another 100k
-of growth, and the count resets once you compact.
+Compaction prompts are on by default, and the point at which they fire is worked
+out per session rather than fixed. It is the lower of two limits:
+
+| Limit | Default | Opus 5 | Sonnet 5 | Haiku 4.5 |
+|---|---|---:|---:|---:|
+| Re-reading the context costs this per request | $0.15 | 300k | 750k | 1.5M |
+| Share of the model's context window | 40% | 400k | 400k | 80k |
+
+The result is then brought forward (x0.75) when the last turn reached a natural
+break (committed, pushed, or just answered), pushed back (x1.5) when it left edits
+uncommitted, and brought forward again (x0.8) when context is growing more than
+50k per message. Once past that point the next message carries a `[context]` line
+naming the point and why, asking Claude to suggest `/compact` to you. It repeats
+only after another 100k of growth, and resets once you compact.
 
 ```bash
 rcskills config                         # show current settings
-rcskills config compact 250000          # prompt later
+rcskills config compact-budget 0.30     # tolerate pricier sessions
+rcskills config compact 250000          # use a fixed threshold instead
+rcskills config compact dynamic         # back to per-session
 rcskills config compact off             # never prompt
-rcskills config compact-remind 150000   # repeat less often
 ```
 
 Settings live in `~/.claude/token-harness/config.json` and apply to every project.
-To change one project only, set `TOKEN_HARNESS_COMPACT` (`on`, `off` or a token
-count) in the `env` block of that project's `.claude/settings.json`.
+To change one project only, set `TOKEN_HARNESS_COMPACT` (`on`, `off`, `dynamic`
+or a token count) in the `env` block of that project's `.claude/settings.json`.
 
 ## What the numbers actually are
 
-Backtested against 117 real transcript turns:
+Backtested against 162 real transcript turns (it was 72.6% on the first 117; the
+wider sample is worse, and this is the current number):
 
 ```
-correct delegate/keep decision: 72.6%
-false delegate:  14.5%   <- sent real work to a weak model
-missed saving:   12.8%   <- paid too much, harmless
+correct delegate/keep decision: 68.5%
+false delegate:  20.4%   <- sent real work to a weak model
+missed saving:   11.1%   <- paid too much, harmless
 ```
 
-Tier accuracy is 43.6% and that is the wrong headline — trivial/simple confusion
+Tier accuracy is 35.8% and that is the wrong headline — trivial/simple confusion
 is free because both route to the same cheap model. Judge the binary decision.
 
 ## Design rules worth stealing without installing anything
@@ -128,7 +140,7 @@ is free because both route to the same cheap model. Judge the binary decision.
 ## Development
 
 ```bash
-npm run verify        # typecheck + skill lint + 167 tests
+npm run verify        # typecheck + skill lint + 245 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```

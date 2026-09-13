@@ -9,6 +9,7 @@ const { spawnSync } = require('node:child_process');
 const { load, set, DEFAULTS } = require('./config.cjs');
 
 delete process.env.TOKEN_HARNESS_COMPACT;
+delete process.env.TOKEN_HARNESS_COMPACT_BUDGET;
 delete process.env.TOKEN_HARNESS_COMPACT_REMIND;
 
 // Points the config at a throwaway file so the real ~/.claude is never touched.
@@ -26,44 +27,65 @@ function withConfig(content) {
   };
 }
 
-test('defaults apply when there is no config file', () => {
+test('defaults apply when there is no config file, and are dynamic', () => {
   const c = withConfig();
   assert.deepStrictEqual(load({}).compact, DEFAULTS.compact);
+  assert.strictEqual(load({}).compact.mode, 'dynamic');
   c.clean();
 });
 
 test('the config file overrides defaults', () => {
-  const c = withConfig(JSON.stringify({ compact: { threshold: 250000 } }));
+  const c = withConfig(JSON.stringify({ compact: { budgetUsd: 0.4, mode: 'fixed', threshold: 250000 } }));
   const s = load({}).compact;
+  assert.strictEqual(s.mode, 'fixed');
   assert.strictEqual(s.threshold, 250000);
-  assert.strictEqual(s.enabled, true);
+  assert.strictEqual(s.budgetUsd, 0.4);
   c.clean();
 });
 
 test('environment variables override the file', () => {
-  const c = withConfig(JSON.stringify({ compact: { enabled: true, threshold: 250000 } }));
+  const c = withConfig(JSON.stringify({ compact: { mode: 'dynamic', budgetUsd: 0.15 } }));
   assert.strictEqual(load({ TOKEN_HARNESS_COMPACT: 'off' }).compact.enabled, false);
-  assert.strictEqual(load({ TOKEN_HARNESS_COMPACT: '120000' }).compact.threshold, 120000);
+
+  const fixed = load({ TOKEN_HARNESS_COMPACT: '120000' }).compact;
+  assert.strictEqual(fixed.mode, 'fixed');
+  assert.strictEqual(fixed.threshold, 120000);
+
+  assert.strictEqual(load({ TOKEN_HARNESS_COMPACT: 'dynamic' }).compact.mode, 'dynamic');
+  assert.strictEqual(load({ TOKEN_HARNESS_COMPACT_BUDGET: '0.3' }).compact.budgetUsd, 0.3);
   assert.strictEqual(load({ TOKEN_HARNESS_COMPACT_REMIND: '50000' }).compact.remindEvery, 50000);
   c.clean();
 });
 
 test('invalid values in the file fall back to defaults', () => {
-  const c = withConfig(JSON.stringify({ compact: { threshold: 'lots', remindEvery: -5 } }));
+  const c = withConfig(JSON.stringify({
+    compact: { mode: 'weird', threshold: 'lots', remindEvery: -5, budgetUsd: 'cheap', qualityShare: 7 },
+  }));
   const s = load({}).compact;
+  assert.strictEqual(s.mode, 'dynamic');
   assert.strictEqual(s.threshold, DEFAULTS.compact.threshold);
   assert.strictEqual(s.remindEvery, DEFAULTS.compact.remindEvery);
+  assert.strictEqual(s.budgetUsd, DEFAULTS.compact.budgetUsd);
+  assert.strictEqual(s.qualityShare, DEFAULTS.compact.qualityShare);
   c.clean();
 });
 
-test('set writes a setting and load reads it back', () => {
+test('set writes each setting and load reads it back', () => {
   const c = withConfig();
   set('compact', '200000');
+  assert.strictEqual(load({}).compact.mode, 'fixed');
   assert.strictEqual(load({}).compact.threshold, 200000);
 
   set('compact', 'off');
   assert.strictEqual(load({}).compact.enabled, false);
   assert.strictEqual(load({}).compact.threshold, 200000, 'switching off keeps the threshold');
+
+  set('compact', 'dynamic');
+  assert.strictEqual(load({}).compact.mode, 'dynamic');
+  assert.strictEqual(load({}).compact.enabled, true);
+
+  set('compact-budget', '$0.25');
+  assert.strictEqual(load({}).compact.budgetUsd, 0.25);
 
   set('compact-remind', '80000');
   assert.strictEqual(load({}).compact.remindEvery, 80000);
@@ -79,7 +101,8 @@ test('set keeps unrelated keys already in the file', () => {
 
 test('set rejects bad values', () => {
   const c = withConfig();
-  assert.throws(() => set('compact', 'sometimes'), /on, off or a token count/);
+  assert.throws(() => set('compact', 'sometimes'), /on, off, dynamic or a token count/);
+  assert.throws(() => set('compact-budget', 'free'), /dollar amount/);
   assert.throws(() => set('compact-remind', 'x'), /token count/);
   assert.throws(() => set('colour', 'blue'), /unknown setting/);
   c.clean();
@@ -102,9 +125,13 @@ test('rcskills config sets and shows the setting from any directory', () => {
     env: { ...process.env },
   });
 
-  const ok = run(['compact', '250000']);
-  assert.strictEqual(ok.status, 0, ok.stderr);
-  assert.match(ok.stdout, /first prompt at: 250k/);
+  const fixed = run(['compact', '250000']);
+  assert.strictEqual(fixed.status, 0, fixed.stderr);
+  assert.match(fixed.stdout, /first prompt at: 250k/);
+
+  const dynamic = run(['compact', 'dynamic']);
+  assert.match(dynamic.stdout, /\(dynamic\)/);
+  assert.match(dynamic.stdout, /natural break/);
 
   const bad = run(['compact', 'sometimes']);
   assert.strictEqual(bad.status, 1);

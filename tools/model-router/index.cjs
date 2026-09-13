@@ -3,8 +3,8 @@
 const TIERS = ['trivial', 'simple', 'moderate', 'complex'];
 
 const TIER_MODEL = {
-  trivial: 'claude-haiku-4-5-20251001',
-  simple: 'claude-haiku-4-5-20251001',
+  trivial: 'claude-haiku-4-5',
+  simple: 'claude-haiku-4-5',
   moderate: 'claude-sonnet-5',
   complex: 'claude-opus-5',
 };
@@ -16,12 +16,8 @@ const TIER_AGENT_MODEL = {
   complex: 'opus',
 };
 
-// USD per million tokens (input, output). Update when list prices change.
-const PRICING = {
-  'claude-haiku-4-5-20251001': { in: 1, out: 5 },
-  'claude-sonnet-5': { in: 3, out: 15 },
-  'claude-opus-5': { in: 15, out: 75 },
-};
+// One price table for the whole harness; see cost.cjs.
+const { PRICING, rate } = require('./cost.cjs');
 
 const SIGNALS = [
   {
@@ -247,7 +243,7 @@ function buildReason(matched, escalated, tier) {
 }
 
 function estimateCost(model, inTokens, outTokens) {
-  const p = PRICING[model];
+  const p = rate(model);
   if (!p) return null;
   return (inTokens / 1e6) * p.in + (outTokens / 1e6) * p.out;
 }

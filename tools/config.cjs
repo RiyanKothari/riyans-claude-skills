@@ -12,7 +12,13 @@ const path = require('path');
 const DEFAULTS = {
   compact: {
     enabled: true,
+    // 'dynamic' works the prompt point out per session; 'fixed' uses `threshold`.
+    mode: 'dynamic',
     threshold: 160000,
+    // Dynamic: prompt once re-reading the context costs this much per request...
+    budgetUsd: 0.15,
+    // ...or once it passes this share of the model's context window, whichever is first.
+    qualityShare: 0.4,
     remindEvery: 100000,
   },
 };
@@ -27,6 +33,11 @@ function positive(v) {
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
+function positiveFloat(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function readConfig(p = configPath()) {
   if (!fs.existsSync(p)) return { ok: true, value: {}, error: '' };
   try {
@@ -38,11 +49,34 @@ function readConfig(p = configPath()) {
 
 function sanitize(raw) {
   const r = raw || {};
+  const share = positiveFloat(r.qualityShare);
   return {
     enabled: r.enabled !== false,
+    mode: r.mode === 'fixed' ? 'fixed' : 'dynamic',
     threshold: positive(r.threshold) || DEFAULTS.compact.threshold,
+    budgetUsd: positiveFloat(r.budgetUsd) || DEFAULTS.compact.budgetUsd,
+    qualityShare: share && share <= 1 ? share : DEFAULTS.compact.qualityShare,
     remindEvery: positive(r.remindEvery) || DEFAULTS.compact.remindEvery,
   };
+}
+
+/** on | off | dynamic | <tokens>. Returns false when the value is not one of those. */
+function applyMode(compact, value) {
+  const v = String(value ?? '').trim().toLowerCase();
+  const tokens = positive(v);
+  if (v === 'off' || v === 'false' || v === '0') compact.enabled = false;
+  else if (v === 'on' || v === 'true') compact.enabled = true;
+  else if (v === 'dynamic' || v === 'auto') {
+    compact.enabled = true;
+    compact.mode = 'dynamic';
+  } else if (tokens) {
+    compact.enabled = true;
+    compact.mode = 'fixed';
+    compact.threshold = tokens;
+  } else {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -53,14 +87,11 @@ function load(env = process.env) {
   const file = readConfig().value || {};
   const compact = sanitize({ ...DEFAULTS.compact, ...(file.compact || {}) });
 
-  const mode = String(env.TOKEN_HARNESS_COMPACT || '').trim().toLowerCase();
-  const modeTokens = positive(mode);
-  if (mode === 'off' || mode === 'false' || mode === '0') compact.enabled = false;
-  else if (mode === 'on' || mode === 'true') compact.enabled = true;
-  else if (modeTokens) {
-    compact.enabled = true;
-    compact.threshold = modeTokens;
-  }
+  const mode = String(env.TOKEN_HARNESS_COMPACT || '').trim();
+  if (mode) applyMode(compact, mode);
+
+  const budget = positiveFloat(env.TOKEN_HARNESS_COMPACT_BUDGET);
+  if (budget) compact.budgetUsd = budget;
 
   const remind = positive(env.TOKEN_HARNESS_COMPACT_REMIND);
   if (remind) compact.remindEvery = remind;
@@ -76,19 +107,17 @@ function set(key, value) {
 
   const current = read.value || {};
   const compact = sanitize({ ...DEFAULTS.compact, ...(current.compact || {}) });
-  const v = String(value ?? '').trim().toLowerCase();
-  const tokens = positive(v);
 
   if (key === 'compact') {
-    if (v === 'off') compact.enabled = false;
-    else if (v === 'on') compact.enabled = true;
-    else if (tokens) {
-      compact.enabled = true;
-      compact.threshold = tokens;
-    } else {
-      throw new Error(`compact expects on, off or a token count, got "${value}"`);
+    if (!applyMode(compact, value)) {
+      throw new Error(`compact expects on, off, dynamic or a token count, got "${value}"`);
     }
+  } else if (key === 'compact-budget') {
+    const usd = positiveFloat(String(value ?? '').trim().replace(/^\$/, ''));
+    if (!usd) throw new Error(`compact-budget expects a dollar amount, got "${value}"`);
+    compact.budgetUsd = usd;
   } else if (key === 'compact-remind') {
+    const tokens = positive(value);
     if (!tokens) throw new Error(`compact-remind expects a token count, got "${value}"`);
     compact.remindEvery = tokens;
   } else {
@@ -103,13 +132,18 @@ function set(key, value) {
 function describe(settings) {
   const c = settings.compact;
   const k = (n) => `${Math.round(n / 1000)}k`;
-  return [
-    `compact prompts:    ${c.enabled ? 'on' : 'off'}`,
-    `  first prompt at: ${k(c.threshold)} tokens of context`,
-    `  then every:      ${k(c.remindEvery)} tokens of further growth`,
-    `config file:        ${configPath()}`,
-    'env overrides:      TOKEN_HARNESS_COMPACT=on|off|<tokens>, TOKEN_HARNESS_COMPACT_REMIND=<tokens>',
-  ].join('\n');
+  const lines = [`compact prompts:    ${c.enabled ? 'on' : 'off'} (${c.mode})`];
+  if (c.mode === 'fixed') {
+    lines.push(`  first prompt at: ${k(c.threshold)} tokens of context`);
+  } else {
+    lines.push(`  prompt when:      re-reading context costs $${c.budgetUsd}/request, or it passes`);
+    lines.push(`                    ${Math.round(c.qualityShare * 100)}% of the model's window; sooner at a natural break, later mid-task`);
+  }
+  lines.push(`  then every:       ${k(c.remindEvery)} tokens of further growth`);
+  lines.push(`config file:        ${configPath()}`);
+  lines.push('env overrides:      TOKEN_HARNESS_COMPACT=on|off|dynamic|<tokens>, '
+    + 'TOKEN_HARNESS_COMPACT_BUDGET=<usd>, TOKEN_HARNESS_COMPACT_REMIND=<tokens>');
+  return lines.join('\n');
 }
 
 if (require.main === module) {
@@ -119,7 +153,7 @@ if (require.main === module) {
     console.log(describe(load()));
   } catch (e) {
     console.error(e.message);
-    console.error('usage: rcskills config [compact <on|off|tokens>] [compact-remind <tokens>]');
+    console.error('usage: rcskills config [compact <on|off|dynamic|tokens>] [compact-budget <usd>] [compact-remind <tokens>]');
     process.exitCode = 1;
   }
 }

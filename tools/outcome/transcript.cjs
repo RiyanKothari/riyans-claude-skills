@@ -133,6 +133,26 @@ function lastTurn(filePath, opts = {}) {
  * tail of the file — transcripts run to many megabytes and this runs on every prompt.
  */
 function lastContextUsage(filePath, tailBytes = 512000) {
+  const lines = readTailLines(filePath, tailBytes);
+  if (!lines) return null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    // Usage recorded before a compaction describes context that no longer exists.
+    if (lines[i].includes('"compact_boundary"') && isCompactBoundary(lines[i])) return { tokens: 0, model: null };
+    if (!lines[i].includes('"usage"')) continue;
+    let o;
+    try {
+      o = JSON.parse(lines[i]);
+    } catch {
+      continue;
+    }
+    const u = o && o.type === 'assistant' && o.message && o.message.usage;
+    if (!u) continue;
+    return { tokens: usageTokens(u), model: o.message.model || null };
+  }
+  return null;
+}
+
+function readTailLines(filePath, tailBytes) {
   let fd;
   try {
     const size = fs.statSync(filePath).size;
@@ -140,26 +160,9 @@ function lastContextUsage(filePath, tailBytes = 512000) {
     const buf = Buffer.alloc(len);
     fd = fs.openSync(filePath, 'r');
     fs.readSync(fd, buf, 0, len, size - len);
-
     const lines = buf.toString('utf8').split('\n');
     if (len < size) lines.shift(); // the first line is probably cut mid-record
-
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (!lines[i].includes('"usage"')) continue;
-      let o;
-      try {
-        o = JSON.parse(lines[i]);
-      } catch {
-        continue;
-      }
-      const u = o && o.type === 'assistant' && o.message && o.message.usage;
-      if (!u) continue;
-      const tokens = (u.input_tokens || 0)
-        + (u.cache_creation_input_tokens || 0)
-        + (u.cache_read_input_tokens || 0);
-      return { tokens, model: o.message.model || null };
-    }
-    return null;
+    return lines.filter(Boolean);
   } catch {
     return null;
   } finally {
@@ -167,6 +170,90 @@ function lastContextUsage(filePath, tailBytes = 512000) {
   }
 }
 
+function isCompactBoundary(line) {
+  try {
+    const o = JSON.parse(line);
+    return Boolean(o && o.type === 'system' && o.subtype === 'compact_boundary');
+  } catch {
+    return false;
+  }
+}
+
+function usageTokens(u) {
+  return (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+}
+
+const COMMITTED = /\bgit\b[^\n|;&]*\b(commit|push)\b/;
+
+/**
+ * What the transcript tail says about the session right now: context size, model,
+ * and where the last completed turn left the work.
+ *
+ *   boundary - it committed or pushed, or answered without editing or much digging
+ *   working  - it edited files and did not commit
+ *   unknown  - anything else, or no completed turn in the tail
+ *
+ * The prompt being submitted may already be written to the transcript, so a last
+ * turn whose prompt matches `currentPrompt` is skipped in favour of the one before.
+ */
+function recentActivity(filePath, opts = {}) {
+  const lines = readTailLines(filePath, opts.tailBytes ?? 512000);
+  if (!lines) return null;
+
+  let usage = { tokens: 0, model: null };
+  const turns = [];
+  let cur = null;
+
+  for (const line of lines) {
+    let o;
+    try {
+      o = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (isHumanPrompt(o)) {
+      cur = { prompt: o.message.content.trim(), edits: 0, commands: 0, committed: false };
+      turns.push(cur);
+      continue;
+    }
+    if (o && o.type === 'system' && o.subtype === 'compact_boundary') {
+      usage = { tokens: 0, model: usage.model };
+      continue;
+    }
+    if (!o || o.type !== 'assistant' || !o.message) continue;
+    if (o.message.usage) usage = { tokens: usageTokens(o.message.usage), model: o.message.model || null };
+    if (!cur || !Array.isArray(o.message.content)) continue;
+
+    for (const block of o.message.content) {
+      if (!block || block.type !== 'tool_use') continue;
+      const kind = classifyTool(block.name || '');
+      if (kind === 'edit') cur.edits++;
+      else if (kind === 'command') {
+        cur.commands++;
+        if (COMMITTED.test(String((block.input && block.input.command) || ''))) cur.committed = true;
+      }
+    }
+  }
+
+  const current = String(opts.currentPrompt || '').trim();
+  let last = turns[turns.length - 1] || null;
+  if (last && current && last.prompt === current) last = turns[turns.length - 2] || null;
+
+  let phase = 'unknown';
+  if (last) {
+    if (last.committed || (last.edits === 0 && last.commands <= 3)) phase = 'boundary';
+    else if (last.edits > 0) phase = 'working';
+  }
+
+  return { ...usage, phase };
+}
+
 module.exports = {
-  parseTranscript, lastTurn, lastContextUsage, findTranscripts, isHumanPrompt, PROJECTS_DIR,
+  parseTranscript,
+  lastTurn,
+  lastContextUsage,
+  recentActivity,
+  findTranscripts,
+  isHumanPrompt,
+  PROJECTS_DIR,
 };

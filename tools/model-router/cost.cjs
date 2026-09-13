@@ -1,21 +1,51 @@
 'use strict';
 
-// USD per million tokens. cacheRead is Anthropic's ~0.1x input rate; cache
-// writes are ~1.25x but are paid once by the session, not per delegation.
+// Anthropic first-party list prices, USD per million tokens, from the claude-api
+// reference (cached 2026-06-24). `cacheRead` is set only where it differs from the
+// usual 0.1x input. Update when list prices change.
 const PRICING = {
-  'claude-haiku-4-5-20251001': { in: 1, out: 5 },
-  'claude-sonnet-5': { in: 3, out: 15 },
-  'claude-opus-5': { in: 15, out: 75 },
+  'claude-fable-5-1': { in: 10, out: 50, cacheRead: 0.25 },
+  'claude-fable-5': { in: 10, out: 50 },
+  'claude-opus-5': { in: 5, out: 25 },
+  'claude-opus-4-8': { in: 5, out: 25 },
+  'claude-opus-4-7': { in: 5, out: 25 },
+  'claude-opus-4-6': { in: 5, out: 25 },
+  'claude-sonnet-5': { in: 2, out: 10 },
+  'claude-sonnet-4-6': { in: 3, out: 15 },
+  'claude-haiku-4-5': { in: 1, out: 5 },
 };
 
+// Context windows in tokens; every priced model not listed here has 1M.
+const WINDOW = { 'claude-haiku-4-5': 200000 };
+const DEFAULT_WINDOW = 1000000;
+
 const CACHE_READ_MULTIPLIER = 0.1;
+const CACHE_WRITE_5M = 1.25;
+const CACHE_WRITE_1H = 2;
 
 // Spinning up a subagent is not free: it re-reads the task, the files it needs
 // and its own tool definitions, none of which inherit the parent's cache.
 const DEFAULT_HANDOFF_TOKENS = 4000;
 
+/** Transcripts sometimes record a dated id (claude-haiku-4-5-20251001); price by the base id. */
+function normalizeModel(model) {
+  return String(model || '').replace(/-\d{8}$/, '');
+}
+
 function rate(model) {
-  return PRICING[model] || null;
+  return PRICING[normalizeModel(model)] || null;
+}
+
+function cacheReadRate(model) {
+  const r = rate(model);
+  if (!r) return null;
+  return r.cacheRead ?? r.in * CACHE_READ_MULTIPLIER;
+}
+
+function contextWindow(model) {
+  const id = normalizeModel(model);
+  if (!PRICING[id]) return null;
+  return WINDOW[id] || DEFAULT_WINDOW;
 }
 
 function priceOf(model, inTokens, outTokens, cachedTokens = 0) {
@@ -23,9 +53,10 @@ function priceOf(model, inTokens, outTokens, cachedTokens = 0) {
   if (!p) return null;
   const fresh = Math.max(0, inTokens - cachedTokens);
   const cached = Math.min(inTokens, Math.max(0, cachedTokens));
+  const readRate = p.cacheRead ?? p.in * CACHE_READ_MULTIPLIER;
   return (
     (fresh / 1e6) * p.in +
-    (cached / 1e6) * p.in * CACHE_READ_MULTIPLIER +
+    (cached / 1e6) * readRate +
     (outTokens / 1e6) * p.out
   );
 }
@@ -38,7 +69,7 @@ function priceOf(model, inTokens, outTokens, cachedTokens = 0) {
  */
 function compare(opts = {}) {
   const sessionModel = opts.sessionModel || 'claude-opus-5';
-  const subModel = opts.subModel || 'claude-haiku-4-5-20251001';
+  const subModel = opts.subModel || 'claude-haiku-4-5';
   const contextTokens = opts.contextTokens ?? 15000;
   const cachedTokens = opts.cachedTokens ?? 0;
   const outTokens = opts.outTokens ?? 2000;
@@ -70,7 +101,12 @@ module.exports = {
   compare,
   priceOf,
   rate,
+  cacheReadRate,
+  contextWindow,
+  normalizeModel,
   PRICING,
   CACHE_READ_MULTIPLIER,
+  CACHE_WRITE_5M,
+  CACHE_WRITE_1H,
   DEFAULT_HANDOFF_TOKENS,
 };

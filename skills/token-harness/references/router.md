@@ -75,21 +75,24 @@ delegate = input(handoff) + output                     on the sub model, cold
 `delegate` is gated on economics, not just tier, with a 15% margin so a rounding-
 error saving does not justify a round trip.
 
-**Counter-intuitive:** output price dominates (opus output is 15x haiku's), so a
-warm cache moves a typo fix from 96.3% to 92.5% saving — it narrows the gap by a
-few points rather than reversing it. The verdict only flips to inline when a
+**Counter-intuitive:** a warm cache narrows the gap rather than reversing it.
+Opus 5 costs 5x Haiku 4.5 on both input and output, so a typo fix (15k context,
+2k output, 4k handoff) saves 88.8% cold, 84.3% with 8k cached and 77.4% with 14k
+cached. The verdict only flips to inline when a
 large handoff meets a tiny output.
 
 ## Measured accuracy
 
-Against 117 real transcript turns:
+Against 162 real transcript turns (72.6% on the first 117 — the wider sample is worse):
 
 ```
-correct delegate/keep decision: 72.6%
-false delegate:  14.5%   <- sent real work to a weak model
-missed saving:   12.8%   <- paid too much, harmless
-exact tier match: 43.6%  |  within one tier: 85.5%
+correct delegate/keep decision: 68.5%
+false delegate:  20.4%   <- sent real work to a weak model
+missed saving:   11.1%   <- paid too much, harmless
+exact tier match: 35.8%  |  within one tier: 79.6%
 ```
+
+False delegation is the costly error and the biggest open gap in the router.
 
 Tier accuracy overstates harm: trivial/simple confusion is free because both
 route to haiku. Judge the binary decision.

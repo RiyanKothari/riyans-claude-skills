@@ -65,7 +65,7 @@ jobs:
           cd "$RUNNER_TEMP/scratch"
           CMD=$(node -e "const s=require('./.claude/settings.json');console.log(s.hooks.SessionStart.flatMap(g=>g.hooks).find(h=>h.command.includes('learning-hook')).command)")
           echo "hook command: $CMD"
-          OUT=$(echo '{"context_tokens":400000}' | CLAUDE_PROJECT_DIR="$PWD" bash -c "$CMD")
+          OUT=$(echo '{"context_tokens":600000}' | CLAUDE_PROJECT_DIR="$PWD" bash -c "$CMD")
           echo "$OUT"
           echo "$OUT" | grep -q '\[context\]'
 
