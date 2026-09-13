@@ -6,8 +6,10 @@ const { MemoryStore } = require('../memory/store.cjs');
 const { backtest, collectTurns, formatReport } = require('./backtest.cjs');
 const { actualTier } = require('./score.cjs');
 
+const { projectDataDir } = require('../paths.cjs');
+
 const DB = process.env.SMART_MEMORY_PATH
-  || path.join(process.cwd(), '.claude', 'memory', 'records.jsonl');
+  || path.join(projectDataDir(), 'records.jsonl');
 
 function main() {
   const [cmd, ...rest] = process.argv.slice(2);

@@ -12,11 +12,14 @@ not asserted.
 
 | Situation | Use | Command |
 |---|---|---|
-| About to start a task | Router | `npm run route -- "<task>"` |
-| Need past context | Memory | `npm run mem -- recall "<question>"` |
-| Finished a task | Scorecard | `npm run scorecard -- score --title "..."` |
-| Doubting the router | Backtest | `npm run backtest` |
-| Context feels bloated | Audit | `npm run audit` |
+| About to start a task | Router | `rcskills route "<task>"` |
+| Need past context | Memory | `rcskills mem recall "<question>"` |
+| Finished a task | Scorecard | `rcskills scorecard score --title "..."` |
+| Doubting the router | Backtest | `rcskills backtest` |
+| Context feels bloated | Audit | `rcskills audit` |
+
+`rcskills` works from any project once linked (`npm link` in the harness repo).
+Inside the harness repo, `npm run <tool> --` does the same thing.
 
 ## Core rules
 

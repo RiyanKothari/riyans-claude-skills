@@ -261,8 +261,31 @@ function status(opts) {
   console.log(JSON.stringify(state, null, 2));
 }
 
+// Every tool's CLI, reachable from any project as `rcskills <tool> ...`.
+const TOOLS = {
+  route: 'tools/model-router/index.cjs',
+  mem: 'tools/memory/cli.cjs',
+  scorecard: 'tools/scorecard/cli.cjs',
+  audit: 'tools/context-audit/cli.cjs',
+  backtest: 'tools/outcome/cli.cjs',
+  seed: 'tools/outcome/cli.cjs',
+  lint: 'tools/skill-lint/cli.cjs',
+};
+
+function runTool(name, rest) {
+  // The outcome CLI takes its own subcommand, so the name is passed through.
+  const args = name === 'backtest' || name === 'seed' ? [name, ...rest] : rest;
+  const r = require('child_process').spawnSync(
+    process.execPath,
+    [path.join(REPO, TOOLS[name]), ...args],
+    { stdio: 'inherit' },
+  );
+  process.exitCode = r.status ?? 1;
+}
+
 function usage() {
-  console.log('Usage: harness.js <install|doctor|status|uninstall> [--profile P] [--global]');
+  console.log('Usage: rcskills <install|doctor|status|uninstall> [--profile P] [--global]');
+  console.log('       rcskills <route|mem|scorecard|audit|backtest|seed|lint> [args]');
   console.log('\nProfiles:');
   for (const [k, v] of Object.entries(PROFILES)) {
     console.log(`  ${k.padEnd(9)} ${v.desc}`);
@@ -273,6 +296,7 @@ function usage() {
 function main() {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
+  if (TOOLS[cmd]) return runTool(cmd, argv.slice(1));
   const pi = argv.indexOf('--profile');
   const opts = {
     profile: pi === -1 ? 'standard' : argv[pi + 1],

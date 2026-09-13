@@ -57,13 +57,26 @@ a test asserting it.
 
 ## Commands
 
+From any project, once the CLI is linked (`npm link` in this repo):
+
 ```bash
-npm run route -- "your task"        # which model can do this?
-npm run mem -- recall "question"    # what do we already know?
-npm run audit                        # what is eating my context?
-npm run backtest                     # is the router actually accurate?
-npm run scorecard -- trend           # am I improving or repeating mistakes?
+rcskills route "your task"          # which model can do this?
+rcskills mem recall "question"      # what do we already know?
+rcskills audit                      # what is eating my context?
+rcskills backtest                   # is the router actually accurate?
+rcskills scorecard trend            # am I improving or repeating mistakes?
 ```
+
+To use everything in every project:
+
+```bash
+npm link
+node bin/harness.js install --profile standard --global
+```
+
+Memory and scorecards for any project other than this repo live under
+`~/.claude/token-harness/projects/`, never inside the project — memory is built
+from your prompts, and must not end up committed to another repository.
 
 ## What the numbers actually are
 

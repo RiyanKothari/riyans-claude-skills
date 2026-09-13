@@ -5,13 +5,27 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const { score, formatCard, PARAMETERS } = require('./rubric.cjs');
+const { projectDataDir } = require('../paths.cjs');
 
 const LOG = process.env.SCORECARD_PATH
-  || path.join(process.cwd(), '.claude', 'memory', 'scorecards.jsonl');
+  || path.join(projectDataDir(), 'scorecards.jsonl');
 
 function flag(args, name, fallback) {
   const i = args.indexOf(`--${name}`);
   return i === -1 ? fallback : args[i + 1];
+}
+
+/** The project's own test command: coverage if it has one, otherwise plain tests. */
+function pickTestCommand(dir = process.cwd()) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    const scripts = pkg.scripts || {};
+    if (scripts.coverage) return 'npm run coverage';
+    if (scripts.test) return 'npm test';
+  } catch {
+    // No package.json: nothing to run, so the evidence gates stay closed.
+  }
+  return null;
 }
 
 /**
@@ -23,9 +37,12 @@ function flag(args, name, fallback) {
  */
 function gatherEvidence() {
   const ev = { verifyRan: false };
+  const cmd = pickTestCommand();
+  if (!cmd) return Object.assign(ev, gatherTurnEvidence());
+
   let out = '';
   try {
-    out = execSync('npm run coverage', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    out = execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     ev.verifyRan = true;
   } catch (e) {
     out = `${e.stdout || ''}${e.stderr || ''}`;

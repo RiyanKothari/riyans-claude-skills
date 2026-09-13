@@ -4,8 +4,10 @@
 const path = require('path');
 const { MemoryStore } = require('./store.cjs');
 
+const { projectDataDir } = require('../paths.cjs');
+
 const DB = process.env.SMART_MEMORY_PATH
-  || path.join(process.cwd(), '.claude', 'memory', 'records.jsonl');
+  || path.join(projectDataDir(), 'records.jsonl');
 
 function flag(args, name, fallback) {
   const i = args.indexOf(`--${name}`);

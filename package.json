@@ -5,7 +5,8 @@
   "description": "Cut Claude Code token cost: model-tier routing, budget-bounded memory, outcome learning, and evidence-gated self-scoring",
   "main": "tools/model-router/index.cjs",
   "bin": {
-    "riyans-claude-skills": "bin/harness.js"
+    "riyans-claude-skills": "bin/harness.js",
+    "rcskills": "bin/harness.js"
   },
   "publishConfig": {
     "access": "public"
