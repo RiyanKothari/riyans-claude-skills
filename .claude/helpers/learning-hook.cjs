@@ -4,8 +4,8 @@
 /**
  * Closes the loop between routing and outcomes.
  *
- *   core     (SessionStart)     - fixed core memory, last-session handoff, compaction advice
- *   recall   (UserPromptSubmit) - relevant memory and routing advice, under a token cap
+ *   core     (SessionStart)     - fixed core memory, last-session handoff, compaction prompt
+ *   recall   (UserPromptSubmit) - relevant memory, routing advice and compaction prompt
  *   finalize (Stop)             - score the turn from the transcript and store it as evidence
  *
  * Every mode must exit 0 and stay silent on failure: a hook that throws breaks
@@ -43,6 +43,7 @@ const DATA = dataDir();
 const STATE = path.join(DATA, 'turn-state.json');
 const DB = process.env.SMART_MEMORY_PATH || path.join(DATA, 'records.jsonl');
 const HANDOFF = path.join(DATA, 'handoff.json');
+const COMPACT_STATE = path.join(DATA, 'compact-state.json');
 // Pinned policy lives in the harness repo's own store and follows every project.
 const HARNESS_DB = path.join(HARNESS_ROOT, '.claude', 'memory', 'records.jsonl');
 
@@ -50,7 +51,6 @@ const RECALL_BUDGET = Number(process.env.SMART_MEMORY_BUDGET || 350);
 // The core is injected into every session unconditionally, so its ceiling is
 // paid on every single session start. Keep it tighter than per-prompt recall.
 const CORE_BUDGET = Number(process.env.SMART_MEMORY_CORE_BUDGET || 400);
-const COMPACT_REMIND_EVERY = Number(process.env.SMART_COMPACT_REMIND || 60000);
 const MAX_NEIGHBORS = 5;
 
 function req(rel) {
@@ -88,12 +88,20 @@ function parseInput() {
   }
 }
 
-function saveState(s) {
+function readJsonFile(p) {
   try {
-    fs.mkdirSync(path.dirname(STATE), { recursive: true });
-    fs.writeFileSync(STATE, JSON.stringify(s), 'utf8');
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
   } catch {
-    // Losing turn state costs one learning sample, not the session.
+    return null;
+  }
+}
+
+function writeJsonFile(p, value) {
+  try {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(value), 'utf8');
+  } catch {
+    // Bookkeeping is best-effort; losing it costs one reminder, not the session.
   }
 }
 
@@ -135,12 +143,46 @@ function findNeighbors(store, prompt, scoreMod) {
     .filter(Boolean);
 }
 
+/** What one more request costs just to re-read the context, at cache-read rates. */
+function requestCost(tokens, model) {
+  const costMod = req('model-router/cost.cjs');
+  const rate = costMod && model && costMod.PRICING[model];
+  return rate ? (tokens / 1e6) * rate.in * costMod.CACHE_READ_MULTIPLIER : null;
+}
+
+/**
+ * The compaction prompt, governed by `rcskills config compact ...`. Mid-session
+ * this is the only way the user hears about context growth: SessionStart fires
+ * once, but a long session keeps growing long after it.
+ */
+function compactPrompt(tokens, input, costs) {
+  const compactMod = req('compact.cjs');
+  const configMod = req('config.cjs');
+  if (!compactMod || !configMod || !tokens) return null;
+
+  const state = readJsonFile(COMPACT_STATE);
+  const result = compactMod.adviseCompact({
+    tokens,
+    sessionId: input.session_id || null,
+    state,
+    settings: configMod.load().compact,
+    costPerRequestUsd: costs.costPerRequestUsd || null,
+    rewriteUsd: costs.rewriteUsd || null,
+  });
+
+  const next = result.state;
+  if (!state || state.sessionId !== next.sessionId || state.advisedAt !== next.advisedAt) {
+    writeJsonFile(COMPACT_STATE, next);
+  }
+  return result.message;
+}
+
 function modeRecall() {
   const input = parseInput();
   const prompt = String(input.prompt || '').trim();
   if (!prompt) process.exit(0);
 
-  saveState({
+  writeJsonFile(STATE, {
     prompt: prompt.slice(0, 500),
     promptId: input.prompt_id || input.promptId || null,
     startedAt: Date.now(),
@@ -181,39 +223,18 @@ function modeRecall() {
     }
   }
 
+  const tsMod = req('outcome/transcript.cjs');
+  const tPath = input.transcript_path || input.transcriptPath;
+  const usage = tsMod && tPath ? tsMod.lastContextUsage(tPath) : null;
+  if (usage) {
+    const advice = compactPrompt(usage.tokens, input, {
+      costPerRequestUsd: requestCost(usage.tokens, usage.model),
+    });
+    if (advice) out.push(advice);
+  }
+
   if (out.length) process.stdout.write(`${out.join('\n')}\n`);
   process.exit(0);
-}
-
-/**
- * Compaction advice, scaled to the window rather than a flat number, and
- * re-issued only after real growth so it does not nag every session.
- *
- * Thresholds follow ECC's strategic-compact: 160k on a 200k window, 250k on 1M,
- * repeating every 60k of further growth.
- */
-function compactAdvice(input, handoff) {
-  const ctx = Number(input.context_tokens || 0);
-  if (!ctx) return null;
-
-  const window = ctx > 260000 ? 1000000 : 200000;
-  const threshold = window >= 1000000 ? 250000 : 160000;
-  if (ctx < threshold) return null;
-
-  const lastAdvised = handoff && Number(handoff.compactAdvisedAt || 0);
-  if (lastAdvised && ctx - lastAdvised < COMPACT_REMIND_EVERY) return null;
-
-  const cacheUsd = Number(input.estimated_cache_write_usd || 0);
-  const cost = cacheUsd ? ` (~$${cacheUsd.toFixed(2)} to rewrite cache)` : '';
-  const pct = Math.round((ctx / window) * 100);
-
-  writeHandoff({ ...(handoff || {}), compactAdvisedAt: ctx });
-
-  return (
-    `[context] ${Math.round(ctx / 1000)}k of ~${window / 1000}k window (${pct}%)${cost}. ` +
-    'Compact at a phase boundary (research->plan, plan->build, after a failed approach), ' +
-    'not mid-implementation. Write the plan to a file first — task lists do not survive /compact.'
-  );
 }
 
 function readScorecards() {
@@ -226,23 +247,6 @@ function readScorecards() {
       .filter(Boolean);
   } catch {
     return [];
-  }
-}
-
-function readHandoff() {
-  try {
-    return JSON.parse(fs.readFileSync(HANDOFF, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function writeHandoff(h) {
-  try {
-    fs.mkdirSync(path.dirname(HANDOFF), { recursive: true });
-    fs.writeFileSync(HANDOFF, JSON.stringify(h), 'utf8');
-  } catch {
-    // Continuity is a convenience, never a hard dependency.
   }
 }
 
@@ -278,7 +282,7 @@ function modeCore() {
   const core = coreTexts();
   if (core.length) out.push(`[core] ${core.join(' | ')}`);
 
-  const h = readHandoff();
+  const h = readJsonFile(HANDOFF);
   if (h && h.summary) {
     const ago = h.at ? Math.round((Date.now() - h.at) / 3600000) : null;
     out.push(`[last session${ago !== null ? ` ${ago}h ago` : ''}] ${h.summary}`);
@@ -296,7 +300,9 @@ function modeCore() {
     out.push(`[scorecard] last ${last.total}/100, weakest ${last.weakest}.${repeat}`);
   }
 
-  const advice = compactAdvice(input, h);
+  const advice = compactPrompt(Number(input.context_tokens || 0), input, {
+    rewriteUsd: Number(input.estimated_cache_write_usd || 0) || null,
+  });
   if (advice) out.push(advice);
 
   if (out.length) process.stdout.write(`${out.join('\n')}\n`);
@@ -346,7 +352,7 @@ function modeFinalize() {
     store.prune();
     store.save();
 
-    writeHandoff({
+    writeJsonFile(HANDOFF, {
       at: Date.now(),
       summary:
         `${tier} turn: ${obs.distinctFiles} file(s), ${obs.edits} edit(s), ` +

@@ -15,6 +15,11 @@ const { hookCommand } = require('../../bin/harness.js');
 const ROOT = path.join(__dirname, '..', '..');
 const PAYLOAD = JSON.stringify({ context_tokens: 400000, estimated_cache_write_usd: 4 });
 
+// Isolate from the user's real settings, so `rcskills config compact off` on this
+// machine cannot make these tests fail.
+process.env.TOKEN_HARNESS_CONFIG = path.join(os.tmpdir(), 'token-harness-test-no-config.json');
+delete process.env.TOKEN_HARNESS_COMPACT;
+
 function sandbox() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hook-exec-'));
   fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });

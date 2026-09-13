@@ -127,4 +127,46 @@ function lastTurn(filePath, opts = {}) {
   return turns.length ? turns[turns.length - 1] : null;
 }
 
-module.exports = { parseTranscript, lastTurn, findTranscripts, isHumanPrompt, PROJECTS_DIR };
+/**
+ * Context size of the most recent request, from the usage Claude Code records on
+ * each assistant message: fresh input + cache writes + cache reads. Reads only the
+ * tail of the file — transcripts run to many megabytes and this runs on every prompt.
+ */
+function lastContextUsage(filePath, tailBytes = 512000) {
+  let fd;
+  try {
+    const size = fs.statSync(filePath).size;
+    const len = Math.min(size, tailBytes);
+    const buf = Buffer.alloc(len);
+    fd = fs.openSync(filePath, 'r');
+    fs.readSync(fd, buf, 0, len, size - len);
+
+    const lines = buf.toString('utf8').split('\n');
+    if (len < size) lines.shift(); // the first line is probably cut mid-record
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i].includes('"usage"')) continue;
+      let o;
+      try {
+        o = JSON.parse(lines[i]);
+      } catch {
+        continue;
+      }
+      const u = o && o.type === 'assistant' && o.message && o.message.usage;
+      if (!u) continue;
+      const tokens = (u.input_tokens || 0)
+        + (u.cache_creation_input_tokens || 0)
+        + (u.cache_read_input_tokens || 0);
+      return { tokens, model: o.message.model || null };
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+module.exports = {
+  parseTranscript, lastTurn, lastContextUsage, findTranscripts, isHumanPrompt, PROJECTS_DIR,
+};

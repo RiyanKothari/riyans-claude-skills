@@ -8,6 +8,11 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { HARNESS_ROOT, isInside, projectRoot, projectDataDir } = require('./paths.cjs');
 
+// Isolate from the user's real settings, so a local compaction preference cannot
+// stop the hook writing the data this file checks for.
+process.env.TOKEN_HARNESS_CONFIG = path.join(os.tmpdir(), 'token-harness-test-no-config.json');
+delete process.env.TOKEN_HARNESS_COMPACT;
+
 test('inside the harness repo, data stays in its gitignored .claude/memory', () => {
   const expected = path.join(HARNESS_ROOT, '.claude', 'memory');
   assert.strictEqual(projectDataDir(HARNESS_ROOT), expected);

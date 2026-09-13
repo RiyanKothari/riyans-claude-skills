@@ -13,7 +13,10 @@ const LIMITS = {
   maxNameLength: 40,
 };
 
-const MOJIBAKE = /â|ï»¿|â|Ã©/;
+// UTF-8 read back as Windows-1252 (what PowerShell produced in this repo) or as
+// Latin-1. The first version knew only the Latin-1 shapes, and passed a published
+// skill whose arrows GitHub was rendering as garbage.
+const MOJIBAKE = /\u00e2\u20ac|\u00e2\u2020|\u00c3[\u00a0-\u00bf]|\u00ef\u00bb\u00bf|\u00e2[\u0080-\u009f]/;
 
 const SECRET_SHAPES = [
   /\bsk-ant-api03-(?!x{8}|y{8})[A-Za-z0-9_-]{16,}/,

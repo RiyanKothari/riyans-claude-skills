@@ -108,9 +108,32 @@ test('a references link that resolves passes', () => {
 
 test('mojibake is caught', () => {
   // Regression: a bulk rewrite corrupted encodings and broke a regex silently.
-  const body = '# T\n\nthis line has a broken em dash â here\n';
+  // Latin-1 shape of an em dash, built at runtime so this file stays clean.
+  const body = `# T\n\nthis line has a broken em dash ${Buffer.from('—', 'utf8').toString('latin1')} here\n`;
   const f = skillDir('moji', skill({ name: 'moji', description: GOOD_DESC }, body));
   assert.ok(lintSkill(f.dir).errors.some((e) => /mojibake/.test(e)));
+  f.clean();
+});
+
+test('Windows-1252 mojibake is caught', () => {
+  // Regression: PowerShell turned an arrow into this three-character sequence in a
+  // published skill, and the Latin-1-only check passed it.
+  // Produce the corruption exactly as PowerShell did — UTF-8 bytes decoded as
+  // Windows-1252 — so this file itself contains only correct characters.
+  const cp1252 = (s) => new TextDecoder('windows-1252').decode(Buffer.from(s, 'utf8'));
+  const arrow = cp1252('→');
+  const dash = cp1252('—');
+  for (const bad of [`Research${arrow}plan`, `Ruflo ${dash} config`]) {
+    const f = skillDir('cp1252', skill({ name: 'cp1252', description: GOOD_DESC }, `# T\n\n${bad}\n`));
+    assert.ok(lintSkill(f.dir).errors.some((e) => /mojibake/.test(e)), `missed: ${bad}`);
+    f.clean();
+  }
+});
+
+test('correct UTF-8 punctuation is not mistaken for mojibake', () => {
+  const body = '# T\n\nResearch → plan — then build “quoted” café\n';
+  const f = skillDir('clean-utf8', skill({ name: 'clean-utf8', description: GOOD_DESC }, body));
+  assert.ok(!lintSkill(f.dir).errors.some((e) => /mojibake/.test(e)));
   f.clean();
 });
 

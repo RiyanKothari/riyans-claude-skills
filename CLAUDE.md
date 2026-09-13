@@ -1,14 +1,14 @@
-# Ruflo â€” Claude Code Configuration
+# Ruflo — Claude Code Configuration
 
 ## Rules
 
 - Do what has been asked; nothing more, nothing less
-- NEVER create files unless absolutely necessary â€” prefer editing existing files
+- NEVER create files unless absolutely necessary — prefer editing existing files
 - NEVER create documentation files unless explicitly requested
-- NEVER save working files or tests to root â€” use `/src`, `/tests`, `/docs`, `/config`, `/scripts`
+- NEVER save working files or tests to root — use `/src`, `/tests`, `/docs`, `/config`, `/scripts`
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
-- NEVER add a `Co-Authored-By` trailer to user commits unless this project's `.claude/settings.json` has `attribution.commit` set (#2078). The Claude Code Bash tool may suggest one in its default commit-message template â€” ignore it. `Co-Authored-By` is semantic authorship attribution under git/GitHub convention; the tool is the facilitator, not a co-author.
+- NEVER add a `Co-Authored-By` trailer to user commits unless this project's `.claude/settings.json` has `attribution.commit` set (#2078). The Claude Code Bash tool may suggest one in its default commit-message template — ignore it. `Co-Authored-By` is semantic authorship attribution under git/GitHub convention; the tool is the facilitator, not a co-author.
 - Keep files under 500 lines
 - Validate input at system boundaries
 
@@ -19,13 +19,13 @@ npm run scorecard -- score --title "what I did" --scopeFit 8 --scopeFit-why "rea
 npm run scorecard -- trend
 ```
 
-Seven parameters weighted to 100. Four â€” correctness, verification, durability,
-efficiency â€” are **evidence-gated** and cap at 5/10 without real measurement, no
+Seven parameters weighted to 100. Four — correctness, verification, durability,
+efficiency — are **evidence-gated** and cap at 5/10 without real measurement, no
 matter what I claim. Durability reads the transcript, so shipping code without
 tests or docs shows up in the same turn.
 
 Report the score honestly even when bad, name the **weakest parameter** and why,
-then fix it or declare it an open gap. `trend` flags a recurring weak spot â€” that
+then fix it or declare it an open gap. `trend` flags a recurring weak spot — that
 is a habit, not an accident. Full rubric: `skills/token-harness/references/scorecard.md`.
 
 ## Reuse ladder (run before writing any code)
@@ -40,7 +40,7 @@ Walk down and stop at the first rung that works:
 6. Can it be one line?
 7. Only then: minimum viable implementation
 
-Run the ladder *after* understanding the problem, not instead of it â€” read the
+Run the ladder *after* understanding the problem, not instead of it — read the
 code the change touches and trace the real flow first.
 
 Never trade away trust-boundary validation, data-loss handling, security or
@@ -61,7 +61,7 @@ Pick the cheapest model that can do the task correctly. Check any prompt with
 | moderate | ordinary bounded feature work | sonnet | Handle inline |
 | complex | architecture, refactor, debugging, tradeoffs | opus | Handle inline |
 
-- Delegate trivial/simple work to a `haiku` subagent â€” ~93% cheaper per call than opus.
+- Delegate trivial/simple work to a `haiku` subagent — ~93% cheaper per call than opus.
 - Never downgrade an ambiguous task; the router escalates a tier on low confidence, so should you.
 - Reasoning prompts (why / how should / tradeoff) never route to haiku.
 - If the session model outclasses the work for a whole stretch of tasks, tell the user to switch with `/model`.
@@ -74,7 +74,7 @@ Verify with `npm test` before claiming any of this works.
 
 Two tiers, both capped so neither can bloat context.
 
-**Fixed core** â€” injected into *every* session at SessionStart, unconditionally,
+**Fixed core** — injected into *every* session at SessionStart, unconditionally,
 capped at 400 tokens. It carries standing policy across model swaps and context
 resets, so a fresh session is never blank.
 
@@ -82,7 +82,7 @@ resets, so a fresh session is never blank.
 - A record retrieved 5+ times that reaches full strength graduates into core on
   its own evidence. The core curates itself; do not hand-pin what usage proves.
 
-**Per-prompt recall** â€” BM25-ranked, capped at 350 tokens, silent when nothing
+**Per-prompt recall** — BM25-ranked, capped at 350 tokens, silent when nothing
 scores. Do not dump memory into context. Query it, and let it return only what fits.
 
 ```bash
@@ -146,7 +146,7 @@ Follow the returned loop:
 Named agents coordinate via `SendMessage`, not polling or shared state.
 
 ```
-Lead (you) â†â†’ architect â†â†’ developer â†â†’ tester â†â†’ reviewer
+Lead (you) ←→ architect ←→ developer ←→ tester ←→ reviewer
               (named agents message each other directly)
 ```
 
@@ -173,18 +173,18 @@ SendMessage({ to: "researcher", summary: "Start", message: "[task context]" })
 
 | Pattern | Flow | Use When |
 |---------|------|----------|
-| **Pipeline** | A â†’ B â†’ C â†’ D | Sequential dependencies (feature dev) |
-| **Fan-out** | Lead â†’ A, B, C â†’ Lead | Independent parallel work (research) |
-| **Supervisor** | Lead â†” workers | Ongoing coordination (complex refactor) |
+| **Pipeline** | A → B → C → D | Sequential dependencies (feature dev) |
+| **Fan-out** | Lead → A, B, C → Lead | Independent parallel work (research) |
+| **Supervisor** | Lead ↔ workers | Ongoing coordination (complex refactor) |
 
 ### Rules
 
-- ALWAYS name agents â€” `name: "role"` makes them addressable
-- ALWAYS include comms instructions in prompts â€” who to message, what to send
+- ALWAYS name agents — `name: "role"` makes them addressable
+- ALWAYS include comms instructions in prompts — who to message, what to send
 - Spawn ALL agents in ONE message with `run_in_background: true`
 - After spawning, continue independent local work; wait only when a dependency
   genuinely blocks progress
-- Do not poll repeatedly â€” agents message back or complete automatically
+- Do not poll repeatedly — agents message back or complete automatically
 - Give every writing agent an isolated worktree and a non-overlapping file scope
 
 ## Swarm & Routing
@@ -218,7 +218,7 @@ npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --
 
 | Tier | Handler | Use Cases |
 |------|---------|-----------|
-| 1 | Agent Booster (WASM) | Simple transforms â€” skip LLM, use Edit directly |
+| 1 | Agent Booster (WASM) | Simple transforms — skip LLM, use Edit directly |
 | 2 | Haiku | Simple tasks, low complexity |
 | 3 | Sonnet/Opus | Architecture, security, complex reasoning |
 
@@ -284,7 +284,7 @@ npm run build && npm test
 
 ## Ruflo CLI
 
-`npx ruflo <command> --help` â€” 26 commands. Run `ruflo doctor --fix` if the MCP
+`npx ruflo <command> --help` — 26 commands. Run `ruflo doctor --fix` if the MCP
 server misbehaves. The background `daemon` is optional and spawns headless
 `claude` sessions on an interval, so it burns tokens continuously; leave it off
 unless you want those sweeps.

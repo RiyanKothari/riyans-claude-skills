@@ -78,6 +78,24 @@ Memory and scorecards for any project other than this repo live under
 `~/.claude/token-harness/projects/`, never inside the project — memory is built
 from your prompts, and must not end up committed to another repository.
 
+## Settings
+
+Compaction prompts are on by default. Once a session's context passes 160k
+tokens, the next message carries a `[context]` line asking Claude to suggest
+`/compact` to you at the next phase boundary. It repeats only after another 100k
+of growth, and the count resets once you compact.
+
+```bash
+rcskills config                         # show current settings
+rcskills config compact 250000          # prompt later
+rcskills config compact off             # never prompt
+rcskills config compact-remind 150000   # repeat less often
+```
+
+Settings live in `~/.claude/token-harness/config.json` and apply to every project.
+To change one project only, set `TOKEN_HARNESS_COMPACT` (`on`, `off` or a token
+count) in the `env` block of that project's `.claude/settings.json`.
+
 ## What the numbers actually are
 
 Backtested against 117 real transcript turns:

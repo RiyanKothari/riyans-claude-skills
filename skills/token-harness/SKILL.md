@@ -23,16 +23,16 @@ Inside the harness repo, `npm run <tool> --` does the same thing.
 
 ## Core rules
 
-**1. Reduce the work before choosing a model.** Walk the reuse ladder first â€”
+**1. Reduce the work before choosing a model.** Walk the reuse ladder first —
 does this need to exist / already in the codebase / stdlib / platform / an
 installed dependency / one line / only then write it. The cheapest token is the
 one never generated. Never trade away security or data-loss handling to shorten
 code; this is reuse, not code golf.
 
 **2. Match model to task, and escalate when unsure.**
-`trivial|simple â†’ haiku`, `moderate â†’ sonnet`, `complex â†’ opus`.
+`trivial|simple → haiku`, `moderate → sonnet`, `complex → opus`.
 Delegate via the Agent tool's `model` parameter. When confidence is low, escalate
-a tier â€” a weak model on a hard task costs a retry, which exceeds the saving.
+a tier — a weak model on a hard task costs a retry, which exceeds the saving.
 Absence of evidence is not ambiguity: a short prompt with no complexity signal is
 conversational, but a short *open-ended work order* ("continue", "go on") is the
 opposite and must escalate.
@@ -49,23 +49,26 @@ why, then fix it or declare it an open gap.
 (~166ms each; real turns average 12.6 tools). Derive from the transcript at Stop.
 
 **6. Audit what is always loaded.** CLAUDE.md and MCP schemas are paid on every
-single request â€” an unused MCP server costs its whole schema forever. Skills are
+single request — an unused MCP server costs its whole schema forever. Skills are
 paid only when they load, so push detail into `references/`. `npm run audit`
 ranks offenders by that leverage.
 
-**7. Compact at phase boundaries, never mid-implementation.** Researchâ†’plan,
-planâ†’build, or after a failed approach. Write the plan to a file first: task
-lists do not survive `/compact`.
+**7. Prompt the user to compact at phase boundaries, never mid-implementation.**
+When a `[context]` line appears, tell the user in one sentence and suggest
+`/compact <what to keep>` at the next boundary: research to plan, plan to build,
+or after a failed approach. Save decisions to memory first. By default it prompts
+at 160k tokens and again every 100k of growth; tune or silence it with
+`rcskills config compact <on|off|tokens>`.
 
 ## Details on demand
 
 Load only what the current task needs:
 
-- `references/router.md` â€” tier signals, repo blast radius, cache-aware cost model
-- `references/memory.md` â€” decay math, budgeted recall, fixed core
-- `references/outcome-loop.md` â€” transcript parsing, backtesting, how to retune
-- `references/scorecard.md` â€” the seven parameters and their evidence gates
-- `references/install.md` â€” harness install, profiles, doctor, uninstall
+- `references/router.md` — tier signals, repo blast radius, cache-aware cost model
+- `references/memory.md` — decay math, budgeted recall, fixed core
+- `references/outcome-loop.md` — transcript parsing, backtesting, how to retune
+- `references/scorecard.md` — the seven parameters and their evidence gates
+- `references/install.md` — harness install, profiles, doctor, uninstall
 
 ## Verify before claiming
 

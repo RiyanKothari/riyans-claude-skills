@@ -213,7 +213,7 @@ function doctor(opts) {
     console.log(`${c.ok ? 'ok  ' : 'FAIL'}  ${c.name.padEnd(20)} ${c.detail}`);
   }
 
-  console.log(bad ? `\n${bad} check(s) failed â€” run install again to repair` : '\nall checks passed');
+  console.log(bad ? `\n${bad} check(s) failed — run install again to repair` : '\nall checks passed');
   process.exitCode = bad ? 1 : 0;
 }
 
@@ -228,7 +228,7 @@ function uninstall(opts) {
   const settingsFile = path.join(dir, 'settings.json');
   const read = readSettings(settingsFile);
   if (!read.ok) {
-    console.error(`refusing to uninstall: ${settingsFile} is not valid JSON â€” remove the hooks by hand`);
+    console.error(`refusing to uninstall: ${settingsFile} is not valid JSON — remove the hooks by hand`);
     process.exitCode = 1;
     return;
   }
@@ -270,6 +270,7 @@ const TOOLS = {
   backtest: 'tools/outcome/cli.cjs',
   seed: 'tools/outcome/cli.cjs',
   lint: 'tools/skill-lint/cli.cjs',
+  config: 'tools/config.cjs',
 };
 
 function runTool(name, rest) {
@@ -285,7 +286,7 @@ function runTool(name, rest) {
 
 function usage() {
   console.log('Usage: rcskills <install|doctor|status|uninstall> [--profile P] [--global]');
-  console.log('       rcskills <route|mem|scorecard|audit|backtest|seed|lint> [args]');
+  console.log('       rcskills <route|mem|scorecard|audit|backtest|seed|lint|config> [args]');
   console.log('\nProfiles:');
   for (const [k, v] of Object.entries(PROFILES)) {
     console.log(`  ${k.padEnd(9)} ${v.desc}`);
