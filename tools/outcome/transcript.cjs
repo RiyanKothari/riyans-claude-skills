@@ -17,8 +17,9 @@ function isHumanPrompt(o) {
     o
     && o.type === 'user'
     && Boolean(o.promptSource)
-    && o.origin
-    && o.origin.kind === 'human'
+    // Headless (-p) sessions record no origin; only a non-human origin disqualifies.
+    && (!o.origin || o.origin.kind === 'human')
+    && !o.isMeta
     && typeof o.message?.content === 'string'
     && o.message.content.trim().length > 0
   );
@@ -203,6 +204,7 @@ function recentActivity(filePath, opts = {}) {
   let usage = { tokens: 0, model: null };
   const turns = [];
   let cur = null;
+  let lastAgentAt = 0;
 
   for (const line of lines) {
     let o;
@@ -226,6 +228,7 @@ function recentActivity(filePath, opts = {}) {
 
     for (const block of o.message.content) {
       if (!block || block.type !== 'tool_use') continue;
+      if (block.name === 'Agent' || block.name === 'Task') lastAgentAt = Date.parse(o.timestamp) || lastAgentAt;
       const kind = classifyTool(block.name || '');
       if (kind === 'edit') {
         cur.edits++;
@@ -255,7 +258,7 @@ function recentActivity(filePath, opts = {}) {
   const recent = completed.slice(-8).map((t) => ({
     edits: t.edits, commands: t.commands, reads: t.reads, distinctFiles: t.files.size,
   }));
-  return { ...usage, phase, recent };
+  return { ...usage, phase, recent, lastAgentAt };
 }
 
 module.exports = {

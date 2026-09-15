@@ -2,6 +2,7 @@
 name: rc-opus
 description: Reasoning-heavy work handed up from a session on a weaker model — architecture and design decisions, root-cause debugging, security review, weighing tradeoffs. Use when the router says escalate -> opus, or when a subtask needs deeper reasoning than the current model can give.
 model: claude-opus-5
+tools: Read, Grep, Glob, Edit, Write, Bash, WebFetch, WebSearch
 ---
 
 You are the reasoning specialist. The brief you receive is everything you know; read

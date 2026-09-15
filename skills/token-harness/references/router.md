@@ -93,23 +93,46 @@ Past turns resembling this prompt, with what they actually cost, are blended
 
 ## Cost model
 
-The naive comparison — both paths at full input rate — is wrong. The session's
-context is prompt-cached (~0.1x input); a subagent starts cold and pays full rate
-for whatever context you re-explain.
+Measured, not assumed. Three real Haiku subagent runs were priced from their own
+transcripts. Each began with ~56k tokens of fixed context (system prompt, CLAUDE.md
+files, skill and agent listings) before the brief, and cost $0.088 cold or $0.035
+when a recent run had left that prefix cached. Trimming the subagent's tool list
+moved it about 1%.
 
 ```
-inline   = cacheRead(cached) + input(fresh) + output   on the session model
-delegate = input(handoff) + output                     on the sub model, cold
+inline   = (task calls + 1) x re-read of the session context, on the session model
+delegate = 2 x re-read of the session context (issue the call, read the result)
+           + subagent: cache-write(56k + brief) on call 1, cache-read on later calls
 ```
 
-`delegate` is gated on economics, not just tier, with a 15% margin so a rounding-
-error saving does not justify a round trip.
+Delegation must clear a 15% margin on that. The consequence:
 
-**Counter-intuitive:** a warm cache narrows the gap rather than reversing it.
-Opus 5 costs 5x Haiku 4.5 on both input and output, so a typo fix (15k context,
-2k output, 4k handoff) saves 88.8% cold, 84.3% with 8k cached and 77.4% with 14k
-cached. The verdict only flips to inline when a
-large handoff meets a tiny output.
+- A fresh session never repays a subagent: its own context is about the size of the
+  subagent's fixed overhead.
+- On Opus 5 a two-call mechanical edit pays only in long sessions, and much sooner
+  when a subagent ran in the last 5 minutes (warm prefix). `rcskills route "<task>"
+  --context <tokens>` prints the exact break-even as `breakEvenTokens`.
+- On Sonnet 5 re-reading is cheap enough that a mechanical delegation almost never pays.
+
+Break-even from the model itself (`compare()`, 15% margin):
+
+| Session | Pays above | Saving at |
+|---|---:|---|
+| Opus 5, 2-call edit | ~335k tokens | 18.2% at 411k |
+| Opus 5, subagent ran in the last 5 min | ~99k | 20.6% at 150k |
+| Opus 5, 4-call task | ~81k | 33.4% at 150k |
+| Sonnet 5, 2-call edit | ~815k | effectively never |
+| Fable 5.1, 2-call edit | ~699k | rarely: its cache reads are cheap |
+
+On the live session it was built in (459k tokens), the hook printed `delegate ->
+haiku ... ~19.7% cheaper than claude-opus-5 at 459k context`.
+
+The brief is priced at 600 tokens, above the four real briefs measured (182–220
+tokens), and paid twice: as output when the parent writes it, as input when it
+reads it back with the result. The old flat model priced a 4k handoff against a
+15k context and claimed ~89% for every session. Output per request (400 tokens)
+and the subagent's reply (300 tokens) remain assumptions, because transcripts do
+not record final output reliably.
 
 ## Measured accuracy
 

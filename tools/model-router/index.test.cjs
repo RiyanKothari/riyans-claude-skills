@@ -11,7 +11,8 @@ test('trivial edits route to haiku', () => {
     'remove console.log from utils.js',
     'bump version to 1.2.3',
   ]) {
-    const r = recommend(p);
+    // In a long session; a fresh one re-reads too little to repay a subagent.
+    const r = recommend(p, { contextTokens: 400000 });
     assert.strictEqual(r.agentModel, 'haiku', `${p} -> ${r.tier}`);
     assert.ok(r.delegate, `${p} should be delegatable`);
   }
@@ -102,11 +103,12 @@ test('unknown model returns null cost', () => {
   assert.strictEqual(estimateCost('not-a-model', 1000, 1000), null);
 });
 
-test('recommend reports real savings against the opus baseline', () => {
-  const r = recommend('fix a typo in the readme');
-  assert.ok(r.savedUsd > 0);
-  assert.ok(r.savedPct > 50, `expected >50% saving, got ${r.savedPct}`);
-  assert.strictEqual(r.baselineCostUsd, estimateCost('claude-opus-5', 15000, 2000));
+test('recommend prices delegation against the session it is really in', () => {
+  const long = recommend('fix a typo in the readme', { contextTokens: 400000 });
+  assert.ok(long.savedUsd > 0 && long.savedPct > 0, `a long session saves, got ${long.savedPct}%`);
+  const fresh = recommend('fix a typo in the readme', { contextTokens: 56000 });
+  assert.strictEqual(fresh.delegate, false, 'a fresh session re-reads too little to repay a subagent');
+  assert.ok(fresh.breakEvenTokens !== null && fresh.breakEvenTokens > 56000);
 });
 
 test('every tier maps to a priced model', () => {

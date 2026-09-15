@@ -61,7 +61,7 @@ Pick the cheapest model that can do the task correctly. Check any prompt with
 | `/model sonnet` suggestion | Tell the user in one sentence; the session model is theirs to change |
 | no line | Handle inline |
 
-- `delegate -> haiku` fires only on clear cheap evidence (router score -2 or lower) and is roughly 77–89% cheaper than opus, depending on cache.
+- `delegate -> haiku` fires only on clear cheap evidence (router score -2 or lower) **and** when it actually pays: a subagent carries ~56k tokens of fixed context, so it only beats inline work in long sessions (on Opus a 2-call edit pays past ~335k tokens, ~99k if a subagent ran in the last 5 minutes; ~18% at 411k, priced from measured subagent runs; a loss in a fresh session).
 - Stay inline only if the brief would need this conversation's history.
 - Never downgrade an ambiguous task: vague work orders ("make it better") are not small.
 - Never route to older model versions: they cost the same or more and are weaker.

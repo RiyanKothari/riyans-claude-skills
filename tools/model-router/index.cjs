@@ -279,9 +279,6 @@ function estimateCost(model, inTokens, outTokens) {
 }
 
 function recommend(prompt, opts = {}) {
-  const inTokens = opts.inTokens ?? 15000;
-  const outTokens = opts.outTokens ?? 2000;
-
   let repoScore = opts.repoScore ?? 0;
   let repoReason = null;
   if (!repoScore && opts.repoRoot) {
@@ -300,10 +297,11 @@ function recommend(prompt, opts = {}) {
   const econ = compare({
     sessionModel,
     subModel: TIER_MODEL.trivial,
-    contextTokens: inTokens,
-    cachedTokens: opts.cachedTokens ?? 0,
-    outTokens,
+    // The context this session really re-reads; unknown means a fresh session.
+    contextTokens: opts.contextTokens,
+    taskCalls: opts.taskCalls,
     handoffTokens: opts.handoffTokens,
+    warmSubagent: opts.warmSubagent,
   });
 
   // Down needs clear cheap evidence, a pricier session model, and a cold subagent
@@ -327,7 +325,8 @@ function recommend(prompt, opts = {}) {
     agentType: delegateTo ? AGENT_TYPE[delegateTo] : null,
     estCostUsd: econ.delegate,
     baselineCostUsd: econ.inline,
-    cacheRatio: econ.cacheRatio,
+    contextTokens: econ.contextTokens,
+    breakEvenTokens: econ.breakEvenTokens,
     savedUsd: down ? econ.savedUsd : 0,
     savedPct: down ? econ.savedPct : 0,
   };
@@ -335,16 +334,16 @@ function recommend(prompt, opts = {}) {
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
-  const ci = argv.indexOf('--cached');
-  const cachedTokens = ci === -1 ? 0 : Number(argv[ci + 1]) || 0;
-  const prompt = argv.filter((a, i) => a !== '--cached' && (ci === -1 || i !== ci + 1)).join(' ');
+  const ci = argv.indexOf('--context');
+  const contextTokens = ci === -1 ? undefined : Number(argv[ci + 1]) || undefined;
+  const prompt = argv.filter((a, i) => a !== '--context' && (ci === -1 || i !== ci + 1)).join(' ');
 
   if (!prompt) {
-    console.log('Usage: node index.cjs <prompt> [--cached <tokens>]');
+    console.log('Usage: node index.cjs <prompt> [--context <session context tokens>]');
     process.exit(0);
   }
   console.log(
-    JSON.stringify(recommend(prompt, { repoRoot: process.cwd(), cachedTokens }), null, 2),
+    JSON.stringify(recommend(prompt, { repoRoot: process.cwd(), contextTokens }), null, 2),
   );
 }
 

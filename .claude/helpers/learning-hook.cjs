@@ -185,9 +185,11 @@ function compactPrompt(tokens, input, activity, extra = {}) {
  * subagent and the brief it needs, and fires only on the router's measured rule.
  */
 function routerNote(r, neighbors) {
-  if (r.direction === 'down' && r.savedPct >= 50) {
+  // The cost model already demands a 15% margin against this session's real context.
+  if (r.direction === 'down') {
     const ev = neighbors.length >= 2 ? `, ${neighbors.length} similar past turns` : '';
-    return `[router] delegate -> haiku (${r.tier}, score ${r.score}${ev}; ~${r.savedPct}% cheaper than ${r.sessionModel}). ` +
+    const ctx = `${Math.round(r.contextTokens / 1000)}k`;
+    return `[router] delegate -> haiku (${r.tier}, score ${r.score}${ev}; ~${r.savedPct}% cheaper than ${r.sessionModel} at ${ctx} context). ` +
       `Call the Agent tool with subagent_type "${r.agentType}" and model "haiku", passing a self-contained brief: ` +
       'the files, the exact change, and the command that verifies it. Check its result. ' +
       'Stay inline only if the brief would need this conversation\'s history.';
@@ -245,8 +247,15 @@ function modeRecall() {
 
   if (router) {
     try {
-      const sessionModel = activity && activity.model ? activity.model : undefined;
-      const note = routerNote(router.recommend(prompt, { repoRoot: ROOT, neighbors, sessionModel }), neighbors);
+      const note = routerNote(router.recommend(prompt, {
+        repoRoot: ROOT,
+        neighbors,
+        sessionModel: activity && activity.model ? activity.model : undefined,
+        // Delegation pays only against the context this session really re-reads,
+        // and a subagent is far cheaper while a recent run left its prefix cached.
+        contextTokens: activity && activity.tokens ? activity.tokens : undefined,
+        warmSubagent: Boolean(activity && activity.lastAgentAt && Date.now() - activity.lastAgentAt < 5 * 60 * 1000),
+      }), neighbors);
       if (note) out.push(note);
     } catch {
       // Routing advice is optional; never block the prompt.

@@ -133,6 +133,14 @@ before the directive format, router lines reached 8 turns and were acted on in
 none, and no turn in the history called a subagent at all. `rcskills backtest`
 reports both numbers.
 
+What a delegation really costs was measured too. A Haiku subagent starts with ~56k
+tokens of fixed context and cost $0.088 per small run ($0.035 with a warm cache),
+and the parent still spends two requests on it. So delegation loses money in a
+fresh session and only pays in long ones: on Opus a two-call edit breaks even at
+~335k tokens (~99k while a recent subagent's cache is warm) and saves about 18% at
+411k, not the ~89% the first cost model claimed. The router now
+prices each prompt against the session's real context and stays silent otherwise.
+
 ## Design rules worth stealing without installing anything
 
 1. **Measure before optimising.** Bare `node` startup is 166 ms; the whole memory
@@ -152,7 +160,7 @@ reports both numbers.
 ## Development
 
 ```bash
-npm run verify        # typecheck + skill lint + 285 tests
+npm run verify        # typecheck + skill lint + 283 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```

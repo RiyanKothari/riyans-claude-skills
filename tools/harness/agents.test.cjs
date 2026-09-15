@@ -39,6 +39,16 @@ test('each subagent pins the model family the router routes to it', () => {
   }
 });
 
+test('subagents declare a small tool allowlist, so they never load every MCP schema', () => {
+  // Measured: with all tools, a haiku subagent spent ~61k tokens on a 9-string grep.
+  for (const name of Object.values(AGENT_TYPE)) {
+    const tools = frontmatter(path.join(AGENTS, `${name}.md`)).tools || '';
+    const list = tools.split(',').map((t) => t.trim()).filter(Boolean);
+    assert.ok(list.length > 0 && list.length <= 10, `${name} tools: "${tools}"`);
+    assert.ok(!list.some((t) => t.startsWith('mcp__')), `${name} must not pull in MCP tools`);
+  }
+});
+
 function run(dir, args) {
   return spawnSync(process.execPath, [HARNESS, ...args], { cwd: dir, encoding: 'utf8' });
 }

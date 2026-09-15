@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { compare, priceOf, PRICING } = require('./cost.cjs');
+const { compare, priceOf, subagentCost, PRICING } = require('./cost.cjs');
 
 test('cached tokens cost a fraction of fresh ones', () => {
   const cold = priceOf('claude-opus-5', 100000, 0, 0);
@@ -11,56 +11,42 @@ test('cached tokens cost a fraction of fresh ones', () => {
   assert.ok(warm < cold / 5, 'a fully cached prefix must be far cheaper');
 });
 
-test('delegation wins on a cold expensive context', () => {
-  const r = compare({ contextTokens: 60000, cachedTokens: 0, outTokens: 3000 });
-  assert.strictEqual(r.winner, 'delegate');
-  assert.ok(r.savedPct > 50);
+test('the subagent model reproduces a measured cold haiku run', () => {
+  // Two real 3-call haiku subagent runs cost $0.0875 and $0.0883, priced from their transcripts.
+  const cost = subagentCost('claude-haiku-4-5', 3);
+  if (cost === null) assert.fail('haiku must be priced');
+  assert.ok(Math.abs(cost - 0.088) / 0.088 < 0.15, `modelled $${cost.toFixed(4)} vs measured $0.088`);
 });
 
-test('a warm cache materially shrinks the claimed saving', () => {
-  // The old flat model claimed ~93% for this shape. Pricing the parent's
-  // cached prefix honestly gives a smaller, truthful number.
-  const cold = compare({ contextTokens: 8000, cachedTokens: 0, outTokens: 300, handoffTokens: 4000 });
-  const warm = compare({ contextTokens: 8000, cachedTokens: 8000, outTokens: 300, handoffTokens: 4000 });
-  assert.ok(warm.savedPct < cold.savedPct, 'caching must reduce the reported saving');
-  assert.ok(warm.savedPct < 93, `warm saving ${warm.savedPct}% must undercut the old 93% claim`);
-});
-
-test('delegation loses when a huge handoff meets a tiny output', () => {
-  // Output price is what usually carries delegation, so it only flips when
-  // there is almost no output to save on and the handoff is enormous.
-  const r = compare({
-    contextTokens: 5000,
-    cachedTokens: 5000,
-    outTokens: 100,
-    handoffTokens: 60000,
-  });
+test('a fresh session never repays a haiku subagent', () => {
+  const r = compare({ contextTokens: 56000 });
   assert.strictEqual(r.winner, 'inline');
-  assert.strictEqual(r.savedPct, 0);
+  assert.ok(r.breakEvenTokens !== null && r.breakEvenTokens > 56000, `break-even ${r.breakEvenTokens}`);
 });
 
-test('output price is the dominant driver of delegation value', () => {
-  const chatty = compare({ contextTokens: 10000, cachedTokens: 10000, outTokens: 8000 });
-  const terse = compare({ contextTokens: 10000, cachedTokens: 10000, outTokens: 100 });
-  assert.ok(chatty.savedPct > terse.savedPct, 'more output means more to save');
+test('a long opus session does, by a measured-size margin rather than 89%', () => {
+  // The session this was built in: 411k context, $0.206 per request just to re-read it.
+  const r = compare({ contextTokens: 411000 });
+  assert.strictEqual(r.winner, 'delegate');
+  assert.ok(r.savedPct > 15 && r.savedPct < 40, `saved ${r.savedPct}%`);
+});
+
+test('a warm subagent cache and a longer task both make delegation pay sooner', () => {
+  const cold = compare({ contextTokens: 100000 }).breakEvenTokens;
+  const warm = compare({ contextTokens: 100000, warmSubagent: true }).breakEvenTokens;
+  const longer = compare({ contextTokens: 100000, taskCalls: 4 }).breakEvenTokens;
+  if (cold === null || warm === null || longer === null) assert.fail('all three must break even below 1M');
+  assert.ok(warm < cold, `warm ${warm} vs cold ${cold}`);
+  assert.ok(longer < cold, `4 calls ${longer} vs 2 calls ${cold}`);
+});
+
+test('a sonnet session re-reads too cheaply to repay a mechanical delegation', () => {
+  assert.strictEqual(compare({ sessionModel: 'claude-sonnet-5', contextTokens: 400000 }).winner, 'inline');
 });
 
 test('marginal savings do not count as a win', () => {
-  const r = compare({
-    sessionModel: 'claude-sonnet-5',
-    subModel: 'claude-haiku-4-5-20251001',
-    contextTokens: 5000,
-    cachedTokens: 4500,
-    outTokens: 200,
-    handoffTokens: 4000,
-    margin: 0.15,
-  });
-  assert.strictEqual(r.winner, 'inline');
-});
-
-test('cacheRatio is reported for transparency', () => {
-  const r = compare({ contextTokens: 10000, cachedTokens: 7500 });
-  assert.strictEqual(r.cacheRatio, 0.75);
+  assert.strictEqual(compare({ contextTokens: 400000 }).winner, 'delegate');
+  assert.strictEqual(compare({ contextTokens: 400000, margin: 0.99 }).winner, 'inline');
 });
 
 test('unknown models degrade to inline rather than guessing', () => {

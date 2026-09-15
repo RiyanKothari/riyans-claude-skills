@@ -31,4 +31,3 @@ coverage/
 
 # ...except the hooks this project actually owns.
 !.claude/helpers/learning-hook.cjs
-!.claude/helpers/model-route-hook.cjs

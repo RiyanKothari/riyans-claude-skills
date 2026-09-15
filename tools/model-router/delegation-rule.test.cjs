@@ -18,7 +18,8 @@ test('vague work orders read short but are never delegated', () => {
 
 test('clear mechanical edits delegate down to the pinned haiku subagent', () => {
   for (const p of ['fix a typo in the readme', 'rename the variable foo to bar', 'bump version to 1.2.3']) {
-    const r = recommend(p);
+    // A long session: a fresh one re-reads too little context to repay a subagent.
+    const r = recommend(p, { contextTokens: 400000 });
     assert.ok(r.score <= DELEGATE_MAX_SCORE, `${p} scored ${r.score}`);
     assert.strictEqual(r.direction, 'down');
     assert.strictEqual(r.delegateTo, 'haiku');

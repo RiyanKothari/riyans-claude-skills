@@ -61,6 +61,27 @@ test('recent completed turns are reported in the shape actualTier reads', () => 
   ]);
 });
 
+test('the latest subagent call is timestamped, so a warm subagent cache can be detected', () => {
+  const a = phaseOf([
+    human('one'),
+    {
+      type: 'assistant',
+      timestamp: '2026-09-16T10:00:00.000Z',
+      message: { content: [{ type: 'tool_use', name: 'Agent', input: { subagent_type: 'rc-haiku' } }] },
+    },
+    human('current'),
+  ], 'current');
+  assert.strictEqual(a.lastAgentAt, Date.parse('2026-09-16T10:00:00.000Z'));
+});
+
+test('a headless prompt with no origin still counts as a human turn', () => {
+  // Found live: a `claude -p` session recorded 0 prompts because it has no origin field.
+  const { isHumanPrompt } = require('./transcript.cjs');
+  assert.ok(isHumanPrompt({ type: 'user', promptSource: 'sdk', message: { content: 'fix the typo teh in README.md' } }));
+  assert.ok(!isHumanPrompt({ type: 'user', promptSource: 'sdk', origin: { kind: 'hook' }, message: { content: 'x' } }));
+  assert.ok(!isHumanPrompt({ type: 'user', promptSource: 'sdk', isMeta: true, message: { content: 'x' } }));
+});
+
 test('a turn that committed is a natural break', () => {
   assert.strictEqual(phaseOf([human('ship'), tools(edit('/a'), bash('git commit -m x')), usage(1)]).phase, 'boundary');
 });

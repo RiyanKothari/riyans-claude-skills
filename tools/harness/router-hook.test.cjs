@@ -13,8 +13,9 @@ const { spawnSync } = require('node:child_process');
 const HOOK = path.join(__dirname, '..', '..', '.claude', 'helpers', 'learning-hook.cjs');
 
 const human = (content) => ({ type: 'user', promptSource: 'sdk', origin: { kind: 'human' }, message: { content } });
-const usage = (model) => ({
-  type: 'assistant', message: { model, usage: { input_tokens: 10, cache_read_input_tokens: 20000 } },
+// A long session by default: delegation only repays a subagent's fixed context there.
+const usage = (model, tokens = 400000) => ({
+  type: 'assistant', message: { model, usage: { input_tokens: 10, cache_read_input_tokens: tokens } },
 });
 const edit = (file) => ({
   type: 'assistant', message: { model: 'claude-opus-5', content: [{ type: 'tool_use', name: 'Edit', input: { file_path: file } }] },
@@ -47,6 +48,12 @@ test('clear mechanical work gets a directive naming the pinned subagent', () => 
   const out = recall(s, 'fix a typo in the readme');
   assert.match(out, /\[router\] delegate -> haiku/);
   assert.match(out, /subagent_type "rc-haiku"/);
+  s.clean();
+});
+
+test('a fresh session is not told to delegate, because it would cost more', () => {
+  const s = session([human('earlier'), usage('claude-opus-5', 30000)]);
+  assert.doesNotMatch(recall(s, 'fix a typo in the readme'), /\[router\]/);
   s.clean();
 });
 
