@@ -5,6 +5,8 @@ const path = require('path');
 const { MemoryStore } = require('../memory/store.cjs');
 const { backtest, collectTurns, formatReport } = require('./backtest.cjs');
 const { actualTier } = require('./score.cjs');
+const { findTranscripts } = require('./transcript.cjs');
+const { followThrough, formatFollowThrough } = require('./delegation.cjs');
 
 const { projectDataDir } = require('../paths.cjs');
 
@@ -22,6 +24,7 @@ function main() {
     }
     const result = backtest(turns);
     console.log(formatReport(result));
+    console.log(`\n${formatFollowThrough(followThrough(findTranscripts()))}`);
 
     if (rest.includes('--rows')) {
       console.log('\nper-turn:');

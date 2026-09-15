@@ -54,19 +54,18 @@ routing below, which only makes the remaining work cheaper.
 Pick the cheapest model that can do the task correctly. Check any prompt with
 `npm run route -- "<prompt>"`.
 
-| Tier | Signals | Model | Action |
-|---|---|---|---|
-| trivial | typo, rename, format, version bump | haiku | Delegate: Agent tool with `model: "haiku"` |
-| simple | one mechanical edit, add a field | haiku | Delegate: Agent tool with `model: "haiku"` |
-| moderate | ordinary bounded feature work | sonnet | Handle inline |
-| complex | architecture, refactor, debugging, tradeoffs | opus | Handle inline |
+| Router line | Action |
+|---|---|
+| `[router] delegate -> haiku` | Agent tool, `subagent_type: "rc-haiku"`, a self-contained brief (files, exact change, verify command); check its result |
+| `[router] escalate -> opus` | Hand the reasoning-heavy core to `rc-opus`; keep the mechanical parts inline |
+| `/model sonnet` suggestion | Tell the user in one sentence; the session model is theirs to change |
+| no line | Handle inline |
 
-- Delegate trivial/simple work to a `haiku` subagent — roughly 77–89% cheaper per call than opus, depending on how much context is cached.
-- Never downgrade an ambiguous task; the router escalates a tier on low confidence, so should you.
-- Reasoning prompts (why / how should / tradeoff) never route to haiku.
-- If the session model outclasses the work for a whole stretch of tasks, tell the user to switch with `/model`.
-- Delegation only pays when the subtask is self-contained. If explaining the context costs
-  more than the work, do it inline.
+- `delegate -> haiku` fires only on clear cheap evidence (router score -2 or lower) and is roughly 77–89% cheaper than opus, depending on cache.
+- Stay inline only if the brief would need this conversation's history.
+- Never downgrade an ambiguous task: vague work orders ("make it better") are not small.
+- Never route to older model versions: they cost the same or more and are weaker.
+- `npm run backtest` reports routing accuracy and how often routed turns were actually delegated.
 
 Verify with `npm test` before claiming any of this works.
 

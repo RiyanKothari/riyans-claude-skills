@@ -148,6 +148,27 @@ function install(opts) {
     installed.push(e.name);
   }
 
+  // Model-pinned subagents the router names. A same-named agent this harness did
+  // not install before is the user's own, and is never overwritten.
+  const previous = readJson(statePath(dir), null);
+  const ownedBefore = new Set((previous && previous.agents) || []);
+  const agents = [];
+  const skippedAgents = [];
+  const srcAgents = path.join(REPO, 'agents');
+  if (fs.existsSync(srcAgents)) {
+    for (const f of fs.readdirSync(srcAgents)) {
+      if (!f.endsWith('.md')) continue;
+      const destAgent = path.join(dir, 'agents', f);
+      if (fs.existsSync(destAgent) && !ownedBefore.has(f)) {
+        skippedAgents.push(f);
+        continue;
+      }
+      fs.mkdirSync(path.dirname(destAgent), { recursive: true });
+      fs.copyFileSync(path.join(srcAgents, f), destAgent);
+      agents.push(f);
+    }
+  }
+
   const settingsFile = path.join(dir, 'settings.json');
   const read = readSettings(settingsFile);
   if (!read.ok) {
@@ -169,12 +190,17 @@ function install(opts) {
     installedAt: new Date().toISOString(),
     repo: REPO,
     skills: installed,
+    agents,
     hooks: added,
     settingsBackup: backup,
   });
 
   console.log(`installed riyans-claude-skills (${opts.profile}) -> ${dir}`);
   console.log(`  skills: ${installed.join(', ')}`);
+  console.log(`  agents: ${agents.join(', ') || 'none'}`);
+  if (skippedAgents.length) {
+    console.log(`  agents left alone (you already have your own): ${skippedAgents.join(', ')}`);
+  }
   const hookNote = added.length
     ? added.join(', ')
     : (profile.hooks.length ? 'already wired (no change)' : 'none (minimal profile)');
@@ -195,6 +221,14 @@ function doctor(opts) {
     'skill installed',
     fs.existsSync(path.join(dir, 'skills', 'token-harness', 'SKILL.md')),
     path.join(dir, 'skills', 'token-harness'),
+  );
+  const agentSrc = path.join(REPO, 'agents');
+  const agentFiles = fs.existsSync(agentSrc) ? fs.readdirSync(agentSrc).filter((f) => f.endsWith('.md')) : [];
+  const missingAgents = agentFiles.filter((f) => !fs.existsSync(path.join(dir, 'agents', f)));
+  check(
+    'subagents installed',
+    !missingAgents.length,
+    missingAgents.length ? `missing: ${missingAgents.join(', ')}` : `${agentFiles.length} model-pinned`,
   );
   check(
     'hook script present',
@@ -245,6 +279,10 @@ function uninstall(opts) {
   for (const name of state.skills || []) {
     const skillDir = path.join(dir, 'skills', path.basename(name));
     if (fs.existsSync(skillDir)) fs.rmSync(skillDir, { recursive: true, force: true });
+  }
+  for (const name of state.agents || []) {
+    const agentFile = path.join(dir, 'agents', path.basename(name));
+    if (fs.existsSync(agentFile)) fs.rmSync(agentFile, { force: true });
   }
   fs.rmSync(statePath(dir), { force: true });
 

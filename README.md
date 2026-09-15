@@ -114,17 +114,24 @@ or a token count) in the `env` block of that project's `.claude/settings.json`.
 
 ## What the numbers actually are
 
-Backtested against 162 real transcript turns (it was 72.6% on the first 117; the
-wider sample is worse, and this is the current number):
+Backtested against 189 real transcript turns, 143 of which edited files or ran
+commands — the only turns where handing work to a subagent is possible:
 
 ```
-correct delegate/keep decision: 68.5%
-false delegate:  20.4%   <- sent real work to a weak model
-missed saving:   11.1%   <- paid too much, harmless
+                        before     now (score -2 or lower)
+correct decision:       62.9%      73.4%
+false delegate:         29.4%      0%      <- sent real work to a weak model
+missed saving:           7.7%      26.6%   <- paid too much, harmless
 ```
 
-Tier accuracy is 35.8% and that is the wrong headline — trivial/simple confusion
-is free because both route to the same cheap model. Judge the binary decision.
+The old rule delegated anything rated trivial or simple. All 42 false delegations
+were low-confidence "simple" guesses on vague work orders like "make it better".
+Only 9 turns meet the new bar, so the 0% is strong evidence, not proof.
+
+Follow-through is measured too, because advice nobody acts on is worth nothing:
+before the directive format, router lines reached 8 turns and were acted on in
+none, and no turn in the history called a subagent at all. `rcskills backtest`
+reports both numbers.
 
 ## Design rules worth stealing without installing anything
 
@@ -145,7 +152,7 @@ is free because both route to the same cheap model. Judge the binary decision.
 ## Development
 
 ```bash
-npm run verify        # typecheck + skill lint + 260 tests
+npm run verify        # typecheck + skill lint + 285 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```

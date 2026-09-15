@@ -45,6 +45,7 @@ const STATE = path.join(DATA, 'turn-state.json');
 const DB = process.env.SMART_MEMORY_PATH || path.join(DATA, 'records.jsonl');
 const HANDOFF = path.join(DATA, 'handoff.json');
 const COMPACT_STATE = path.join(DATA, 'compact-state.json');
+const SWITCH_STATE = path.join(DATA, 'model-switch-state.json');
 // Pinned policy lives in the harness repo's own store and follows every project.
 const HARNESS_DB = path.join(HARNESS_ROOT, '.claude', 'memory', 'records.jsonl');
 
@@ -178,6 +179,51 @@ function compactPrompt(tokens, input, activity, extra = {}) {
   return result.message;
 }
 
+/**
+ * A directive, not a hint. The advisory "Mechanical subtasks -> Agent tool" line was
+ * attached to 9 real turns and acted on in none, so the line now names the exact
+ * subagent and the brief it needs, and fires only on the router's measured rule.
+ */
+function routerNote(r, neighbors) {
+  if (r.direction === 'down' && r.savedPct >= 50) {
+    const ev = neighbors.length >= 2 ? `, ${neighbors.length} similar past turns` : '';
+    return `[router] delegate -> haiku (${r.tier}, score ${r.score}${ev}; ~${r.savedPct}% cheaper than ${r.sessionModel}). ` +
+      `Call the Agent tool with subagent_type "${r.agentType}" and model "haiku", passing a self-contained brief: ` +
+      'the files, the exact change, and the command that verifies it. Check its result. ' +
+      'Stay inline only if the brief would need this conversation\'s history.';
+  }
+  if (r.direction === 'up') {
+    return `[router] escalate -> opus (${r.tier}; this session runs ${r.sessionModel}). ` +
+      `Hand the reasoning-heavy core to the Agent tool with subagent_type "${r.agentType}" and model "opus", ` +
+      'with a complete brief, and keep the mechanical parts here.';
+  }
+  return null;
+}
+
+/**
+ * Wording cannot tell moderate work from complex (17 of 29 "moderate" predictions
+ * were complex), so Sonnet is suggested from what the session actually did: when the
+ * last 6 completed turns on an Opus or Fable session were all small, and at least 3
+ * of them real edits or commands, the user hears once per session that a cheaper
+ * model would do.
+ */
+function modelSwitchNote(activity, input, scoreMod) {
+  if (!activity || !scoreMod || !Array.isArray(activity.recent)) return null;
+  if (!/opus|fable/i.test(String(activity.model || ''))) return null;
+  const last = activity.recent.slice(-6);
+  if (last.length < 6) return null;
+  if (!last.every((t) => ['trivial', 'simple'].includes(scoreMod.actualTier(t)))) return null;
+  if (last.filter((t) => t.edits + t.commands > 0).length < 3) return null;
+
+  const sessionId = input.session_id || null;
+  const state = readJsonFile(SWITCH_STATE);
+  if (state && state.sessionId === sessionId) return null;
+  writeJsonFile(SWITCH_STATE, { sessionId, at: Date.now() });
+  return `[router] The last 6 turns on ${activity.model} were all small work. Tell the user in one sentence that ` +
+    '`/model sonnet` (or `/model opusplan`: Opus to plan, Sonnet to build) would handle a stretch like this for ' +
+    'about 60% less, and `/model opus` switches back for hard work.';
+}
+
 function modeRecall() {
   const input = parseInput();
   const prompt = String(input.prompt || '').trim();
@@ -195,21 +241,19 @@ function modeRecall() {
   const out = [];
 
   const neighbors = findNeighbors(store, prompt, scoreMod);
+  const activity = sessionActivity(input, prompt);
 
   if (router) {
     try {
-      const r = router.recommend(prompt, { repoRoot: ROOT, neighbors });
-      if (r.delegate && r.savedPct >= 50) {
-        const ev = neighbors.length >= 2 ? `, ${neighbors.length} past similar turns` : '';
-        out.push(
-          `[router] ${r.tier} (conf ${r.confidence}${ev}). Mechanical subtasks -> ` +
-          `Agent tool model:"${r.agentModel}", ~${r.savedPct}% cheaper. Inline if it needs repo context.`,
-        );
-      }
+      const sessionModel = activity && activity.model ? activity.model : undefined;
+      const note = routerNote(router.recommend(prompt, { repoRoot: ROOT, neighbors, sessionModel }), neighbors);
+      if (note) out.push(note);
     } catch {
       // Routing advice is optional; never block the prompt.
     }
   }
+  const switchNote = modelSwitchNote(activity, input, scoreMod);
+  if (switchNote) out.push(switchNote);
 
   if (store) {
     try {
@@ -224,7 +268,6 @@ function modeRecall() {
     }
   }
 
-  const activity = sessionActivity(input, prompt);
   if (activity && activity.tokens) {
     const advice = compactPrompt(activity.tokens, input, activity);
     if (advice) out.push(advice);

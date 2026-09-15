@@ -16,6 +16,36 @@ const TIER_AGENT_MODEL = {
   complex: 'opus',
 };
 
+// Measured on 143 real turns that edited or ran something: delegating every
+// trivial/simple prediction sent real work to haiku 29.4% of the time, because a
+// "simple" rating always sits on a band edge (confidence <= 0.33). Requiring clear
+// cheap evidence — score -2 or lower — gave 0 false delegations in that sample and
+// 73.4% correct decisions instead of 62.9%.
+const DELEGATE_MAX_SCORE = -2;
+
+// Capability order. Older versions are absent on purpose: Opus 4.6-4.8 cost the
+// same as Opus 5 and Sonnet 4.6 costs more than Sonnet 5, so none is ever the
+// cheapest adequate model. Fable (2x Opus) is never chosen automatically.
+/** @type {Record<string, number>} */
+const MODEL_RANK = { haiku: 1, sonnet: 2, opus: 3, fable: 4 };
+
+// The model-pinned subagents in agents/, installed with the harness.
+/** @type {Record<string, string>} */
+const AGENT_TYPE = { haiku: 'rc-haiku', sonnet: 'rc-sonnet', opus: 'rc-opus' };
+
+const HARD_SIGNALS = new Set(['reasoning', 'deep-engineering', 'escalate']);
+
+/** @param {string|null|undefined} model */
+function modelFamily(model) {
+  const m = String(model || '').toLowerCase().match(/haiku|sonnet|opus|fable/);
+  return m ? m[0] : null;
+}
+
+/** The shipped delegation rule, shared with the backtest so it measures what runs. */
+function shouldDelegateDown(c) {
+  return c.score <= DELEGATE_MAX_SCORE;
+}
+
 // One price table for the whole harness; see cost.cjs.
 const { PRICING, rate } = require('./cost.cjs');
 
@@ -263,19 +293,26 @@ function recommend(prompt, opts = {}) {
 
   const c = classify(prompt, { repoScore, neighbors: opts.neighbors });
   const model = TIER_MODEL[c.tier];
-  const baseline = opts.baselineModel ?? 'claude-opus-5';
+  const sessionModel = opts.sessionModel || opts.baselineModel || 'claude-opus-5';
+  const sessionRank = MODEL_RANK[modelFamily(sessionModel) || ''] || MODEL_RANK.opus;
 
   const { compare } = require('./cost.cjs');
   const econ = compare({
-    sessionModel: baseline,
-    subModel: model,
+    sessionModel,
+    subModel: TIER_MODEL.trivial,
     contextTokens: inTokens,
     cachedTokens: opts.cachedTokens ?? 0,
     outTokens,
     handoffTokens: opts.handoffTokens,
   });
 
-  const tierAllows = c.tier === 'trivial' || c.tier === 'simple';
+  // Down needs clear cheap evidence, a pricier session model, and a cold subagent
+  // that still beats re-reading the context this session already has cached.
+  const down = shouldDelegateDown(c) && sessionRank > MODEL_RANK.haiku && econ.winner === 'delegate';
+  // Up: a session on a weaker model than a reasoning-heavy task needs hands it on.
+  const up = !down && c.tier === 'complex' && sessionRank < MODEL_RANK.opus
+    && c.matched.some((m) => HARD_SIGNALS.has(m.signal));
+  const delegateTo = down ? 'haiku' : up ? 'opus' : null;
 
   return {
     ...c,
@@ -283,14 +320,16 @@ function recommend(prompt, opts = {}) {
     repoReason,
     model,
     agentModel: TIER_AGENT_MODEL[c.tier],
-    // A cheap tier is necessary but not sufficient: handing a cold subagent a
-    // context the session already has cached can cost more than doing it here.
-    delegate: tierAllows && econ.winner === 'delegate',
+    sessionModel,
+    delegate: down,
+    direction: down ? 'down' : up ? 'up' : null,
+    delegateTo,
+    agentType: delegateTo ? AGENT_TYPE[delegateTo] : null,
     estCostUsd: econ.delegate,
     baselineCostUsd: econ.inline,
     cacheRatio: econ.cacheRatio,
-    savedUsd: econ.savedUsd,
-    savedPct: econ.savedPct,
+    savedUsd: down ? econ.savedUsd : 0,
+    savedPct: down ? econ.savedPct : 0,
   };
 }
 
@@ -313,8 +352,13 @@ module.exports = {
   classify,
   recommend,
   estimateCost,
+  shouldDelegateDown,
+  modelFamily,
   TIERS,
   TIER_MODEL,
   TIER_AGENT_MODEL,
+  DELEGATE_MAX_SCORE,
+  MODEL_RANK,
+  AGENT_TYPE,
   PRICING,
 };

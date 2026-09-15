@@ -15,6 +15,7 @@
     "bin/",
     "tools/",
     "skills/",
+    "agents/",
     ".claude/helpers/learning-hook.cjs",
     "README.md",
     "LICENSE"

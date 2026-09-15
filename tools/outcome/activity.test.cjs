@@ -49,6 +49,18 @@ test('usage from before a compaction does not count as current context', () => {
   assert.strictEqual(after.tokens, 40000, 'the first usage after compaction is the real size');
 });
 
+test('recent completed turns are reported in the shape actualTier reads', () => {
+  const a = phaseOf([
+    human('one'), tools(edit('/a.js'), edit('/b.js'), bash('npm test')),
+    human('two'), tools(edit('/c.js')),
+    human('current'),
+  ], 'current');
+  assert.deepStrictEqual(a.recent, [
+    { edits: 2, commands: 1, reads: 0, distinctFiles: 2 },
+    { edits: 1, commands: 0, reads: 0, distinctFiles: 1 },
+  ]);
+});
+
 test('a turn that committed is a natural break', () => {
   assert.strictEqual(phaseOf([human('ship'), tools(edit('/a'), bash('git commit -m x')), usage(1)]).phase, 'boundary');
 });

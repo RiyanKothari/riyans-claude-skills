@@ -29,13 +29,16 @@ installed dependency / one line / only then write it. The cheapest token is the
 one never generated. Never trade away security or data-loss handling to shorten
 code; this is reuse, not code golf.
 
-**2. Match model to task, and escalate when unsure.**
-`trivial|simple → haiku`, `moderate → sonnet`, `complex → opus`.
-Delegate via the Agent tool's `model` parameter. When confidence is low, escalate
-a tier — a weak model on a hard task costs a retry, which exceeds the saving.
-Absence of evidence is not ambiguity: a short prompt with no complexity signal is
-conversational, but a short *open-ended work order* ("continue", "go on") is the
-opposite and must escalate.
+**2. Act on the router, and let evidence pick the model.**
+A `[router] delegate -> haiku` line is an instruction: call the Agent tool with the
+named subagent (`rc-haiku`, pinned to Haiku 4.5) and a self-contained brief — files,
+exact change, verifying command — then check what it did. `escalate -> opus` hands
+the reasoning-heavy core to `rc-opus` when the session runs a weaker model. The
+router delegates down only on clear cheap evidence (score -2 or lower): vague work
+orders like "make it better" read short but are not small. Moderate work is never
+delegated on wording alone, because wording cannot tell it from complex; Sonnet is
+suggested for the session instead, once its recent turns prove small. Older Opus and
+Sonnet versions are never the cheapest adequate choice and are never routed to.
 
 **3. Never dump memory into context.** Query it. Recall is BM25-ranked and hard-
 capped by a token budget, so cost cannot grow with store size. Unused notes decay

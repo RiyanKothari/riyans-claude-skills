@@ -1,6 +1,6 @@
 'use strict';
 
-const { classify } = require('../model-router/index.cjs');
+const { classify, shouldDelegateDown } = require('../model-router/index.cjs');
 const { actualTier, tierDelta, TIERS } = require('./score.cjs');
 const { parseTranscript, findTranscripts } = require('./transcript.cjs');
 
@@ -25,7 +25,8 @@ function backtest(turns, opts = {}) {
   for (const turn of turns) {
     if (opts.minPromptLength && turn.prompt.length < opts.minPromptLength) continue;
 
-    const predicted = classify(turn.prompt, { repoScore: opts.repoScore || 0 }).tier;
+    const c = classify(turn.prompt, { repoScore: opts.repoScore || 0 });
+    const predicted = c.tier;
     const actual = actualTier(turn);
     const delta = tierDelta(predicted, actual);
 
@@ -35,8 +36,12 @@ function backtest(turns, opts = {}) {
       predicted,
       actual,
       delta,
-      predDelegate: DELEGATE_TIERS.has(predicted),
+      // The shipped rule, not the tier: a "simple" prediction is always a
+      // low-confidence guess, and delegating on it sent real work to haiku.
+      predDelegate: shouldDelegateDown(c),
       actDelegate: DELEGATE_TIERS.has(actual),
+      // Only a turn that edited or ran something had work a subagent could take.
+      actionable: turn.edits + turn.commands > 0,
       edits: turn.edits,
       files: turn.distinctFiles,
       commands: turn.commands,
@@ -56,10 +61,28 @@ function backtest(turns, opts = {}) {
   const missedSaving = rows.filter((r) => !r.predDelegate && r.actDelegate);
   const binaryCorrect = n - falseDelegate.length - missedSaving.length;
 
+  // A question answered with no tools counts as "small" above, yet there is
+  // nothing to hand a subagent. Turns that did work are the honest headline.
+  const act = rows.filter((r) => r.actionable);
+  const actFalse = act.filter((r) => r.predDelegate && !r.actDelegate).length;
+  const actMissed = act.filter((r) => !r.predDelegate && r.actDelegate).length;
+  const actDelegated = act.filter((r) => r.predDelegate).length;
+  const pctOf = (x, d) => (d ? Number(((x / d) * 100).toFixed(1)) : 0);
+
   return {
     n,
     exact,
     within1,
+    actionable: {
+      n: act.length,
+      correctPct: pctOf(act.length - actFalse - actMissed, act.length),
+      falseDelegate: actFalse,
+      falseDelegatePct: pctOf(actFalse, act.length),
+      missedSaving: actMissed,
+      missedSavingPct: pctOf(actMissed, act.length),
+      delegated: actDelegated,
+      precisionPct: pctOf(actDelegated - actFalse, actDelegated),
+    },
     binaryCorrect,
     binaryCorrectPct: n ? Number(((binaryCorrect / n) * 100).toFixed(1)) : 0,
     falseDelegate: falseDelegate.length,
@@ -91,7 +114,14 @@ function formatReport(result) {
   const lines = [];
   lines.push(`turns analysed: ${result.n}`);
   lines.push('');
-  lines.push('-- delegate / keep decision (what actually costs money) --');
+  const a = result.actionable;
+  lines.push('-- delegate / keep decision on turns that did work (the headline) --');
+  lines.push(`turns that edited or ran something: ${a.n}`);
+  lines.push(`correct decision: ${a.correctPct}%   delegated: ${a.delegated} (precision ${a.precisionPct}%)`);
+  lines.push(`false delegate:   ${a.falseDelegate} (${a.falseDelegatePct}%)  <- sent real work to a weak model`);
+  lines.push(`missed saving:    ${a.missedSaving} (${a.missedSavingPct}%)  <- paid too much, harmless`);
+  lines.push('');
+  lines.push('-- same decision on every turn, questions included --');
   lines.push(`correct decision: ${result.binaryCorrect}/${result.n} (${result.binaryCorrectPct}%)`);
   lines.push(`false delegate:   ${result.falseDelegate} (${result.falseDelegatePct}%)  <- sent real work to a weak model`);
   lines.push(`missed saving:    ${result.missedSaving} (${result.missedSavingPct}%)  <- paid too much, harmless`);

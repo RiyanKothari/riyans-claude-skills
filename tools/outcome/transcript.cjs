@@ -212,7 +212,7 @@ function recentActivity(filePath, opts = {}) {
       continue;
     }
     if (isHumanPrompt(o)) {
-      cur = { prompt: o.message.content.trim(), edits: 0, commands: 0, committed: false };
+      cur = { prompt: o.message.content.trim(), edits: 0, commands: 0, reads: 0, files: new Set(), committed: false };
       turns.push(cur);
       continue;
     }
@@ -227,7 +227,10 @@ function recentActivity(filePath, opts = {}) {
     for (const block of o.message.content) {
       if (!block || block.type !== 'tool_use') continue;
       const kind = classifyTool(block.name || '');
-      if (kind === 'edit') cur.edits++;
+      if (kind === 'edit') {
+        cur.edits++;
+        if (block.input && block.input.file_path) cur.files.add(block.input.file_path);
+      } else if (kind === 'read') cur.reads++;
       else if (kind === 'command') {
         cur.commands++;
         if (COMMITTED.test(String((block.input && block.input.command) || ''))) cur.committed = true;
@@ -236,8 +239,10 @@ function recentActivity(filePath, opts = {}) {
   }
 
   const current = String(opts.currentPrompt || '').trim();
-  let last = turns[turns.length - 1] || null;
-  if (last && current && last.prompt === current) last = turns[turns.length - 2] || null;
+  const completed = turns.length && current && turns[turns.length - 1].prompt === current
+    ? turns.slice(0, -1)
+    : turns;
+  const last = completed[completed.length - 1] || null;
 
   let phase = 'unknown';
   if (last) {
@@ -245,7 +250,12 @@ function recentActivity(filePath, opts = {}) {
     else if (last.edits > 0) phase = 'working';
   }
 
-  return { ...usage, phase };
+  // Completed turns in the tail, shaped for actualTier, so a caller can judge what
+  // the session has really been doing rather than what its prompts said.
+  const recent = completed.slice(-8).map((t) => ({
+    edits: t.edits, commands: t.commands, reads: t.reads, distinctFiles: t.files.size,
+  }));
+  return { ...usage, phase, recent };
 }
 
 module.exports = {

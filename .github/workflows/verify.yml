@@ -99,6 +99,7 @@ jobs:
               'skills/token-harness/SKILL.md',
               'LICENSE',
               '.claude/helpers/learning-hook.cjs',
+              'agents/rc-haiku.md',
             ];
             const missing = need.filter(n => !files.includes(n));
             if (missing.length) { console.error('missing from tarball:', missing); process.exit(1); }

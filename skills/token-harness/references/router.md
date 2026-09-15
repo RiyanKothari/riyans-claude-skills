@@ -5,14 +5,44 @@ correctly. A weighted keyword and structural heuristic, corrected by two evidenc
 sources. Not a learned model — `confidence` is distance from a tier boundary, not
 a calibrated probability.
 
-## Tiers
+## Tiers and what is actually routed
 
-| Tier | Model | Agent param |
+| Tier | Cheapest capable model | Routed automatically? |
 |---|---|---|
-| trivial | claude-haiku-4-5-20251001 | `haiku` |
-| simple | claude-haiku-4-5-20251001 | `haiku` |
-| moderate | claude-sonnet-5 | `sonnet` |
-| complex | claude-opus-5 | `opus` |
+| trivial | Haiku 4.5 | Yes, at score -2 or lower: `delegate -> haiku` (`rc-haiku`) |
+| simple | Haiku 4.5 | No: a "simple" rating is always a low-confidence guess |
+| moderate | Sonnet 5 | No: wording cannot tell it from complex, so `/model sonnet` is suggested from measured turns |
+| complex | Opus 5 | Up only: a Haiku or Sonnet session hands reasoning-heavy work to `rc-opus` |
+
+### Why delegation is a score threshold
+
+On 143 real turns that edited or ran something, delegating every trivial/simple
+prediction sent real work to Haiku 29.4% of the time. All 42 of those false
+delegations had confidence below 0.34, and 41 were rated "simple": vague work
+orders like "make it better", "improve it" and "go", which read short but are not
+small. Requiring score -2 or lower gave 0 false delegations in that sample and
+73.4% correct decisions instead of 62.9%, at the cost of more missed savings. Only
+9 turns in the sample met the bar, so treat the precision as strong but not proven.
+
+### Why Sonnet is suggested, not delegated
+
+Of 29 prompts predicted "moderate", 17 turned out complex, so delegating them to
+Sonnet on wording would under-route most of the time. What the session actually did
+is reliable: when its last 6 completed turns on Opus or Fable were all small, and at
+least 3 were real edits or commands, the hook tells the user once that `/model
+sonnet` or `/model opusplan` would handle the stretch for about 60% less.
+
+### Models never routed to
+
+Opus 4.6–4.8 cost the same as Opus 5 and Sonnet 4.6 costs more than Sonnet 5, so an
+older version is never the cheapest adequate choice. Fable costs 2x Opus and is never
+chosen automatically.
+
+### Follow-through
+
+Before the directive format, the advisory router line was attached to 9 real turns
+and acted on in none, and 7 of those 9 would have been wrong. `rcskills backtest`
+reports how often routed turns actually called the named subagent.
 
 ## Signals
 
@@ -83,16 +113,18 @@ large handoff meets a tiny output.
 
 ## Measured accuracy
 
-Against 162 real transcript turns (72.6% on the first 117 — the wider sample is worse):
+Against 189 real transcript turns, headlined on the 143 that edited or ran
+something (a question answered with no tools has nothing to hand a subagent):
 
 ```
-correct delegate/keep decision: 68.5%
-false delegate:  20.4%   <- sent real work to a weak model
-missed saving:   11.1%   <- paid too much, harmless
-exact tier match: 35.8%  |  within one tier: 79.6%
+turns that did work:  correct 73.4%   false delegate 0 (0%)   missed saving 26.6%   delegated 9, precision 100%
+every turn:           correct 60.3%   false delegate 0 (0%)   missed saving 39.7%
+exact tier match: 34.9%  |  within one tier: 76.2%
+follow-through (before the directive format): 8 routed turns, 0 followed, 0 subagent calls
 ```
 
-False delegation is the costly error and the biggest open gap in the router.
+Missed savings are now the open gap: small tasks whose prompts carry no cheap signal
+("updated api", "failed", pasted credentials) stay on the session model.
 
 Tier accuracy overstates harm: trivial/simple confusion is free because both
 route to haiku. Judge the binary decision.
