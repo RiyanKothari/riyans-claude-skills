@@ -122,6 +122,21 @@ test('install is idempotent', () => {
   cleanup(dir);
 });
 
+test('re-install repairs millisecond timeouts written by versions before 1.1.0', () => {
+  const dir = sandbox();
+  run(dir, ['install', '--profile', 'standard']);
+  const s = settings(dir);
+  // Claude Code reads timeouts as seconds: 6000 let a hung hook hold a session 100 minutes.
+  for (const groups of Object.values(s.hooks)) for (const g of groups) g.hooks[0].timeout = 6000;
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), JSON.stringify(s));
+
+  run(dir, ['install', '--profile', 'standard']);
+  const timeouts = Object.values(settings(dir).hooks).flatMap((groups) => groups.map((g) => g.hooks[0].timeout));
+  assert.strictEqual(timeouts.length, 4);
+  assert.ok(timeouts.every((t) => t <= 10), `seconds, got ${timeouts}`);
+  cleanup(dir);
+});
+
 test('install backs settings up before writing', () => {
   const dir = sandbox(JSON.stringify({ model: 'x' }));
   run(dir, ['install']);

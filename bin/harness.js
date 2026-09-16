@@ -212,7 +212,7 @@ function install(opts) {
   }
   const hookNote = added.length
     ? added.join(', ')
-    : (profile.hooks.length ? 'already wired (no change)' : 'none (minimal profile)');
+    : (profile.hooks.length ? 'already wired (commands and timeouts refreshed)' : 'none (minimal profile)');
   console.log(`  hooks: ${hookNote}`);
   if (backup) console.log(`  settings backed up: ${path.basename(backup)}`);
   console.log('\nrun `node bin/harness.js doctor` to verify');
