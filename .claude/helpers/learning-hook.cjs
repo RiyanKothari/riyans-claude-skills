@@ -243,32 +243,75 @@ function writeHandoff(guardMod, activity, sessionId) {
   if (summary) writeJsonFile(HANDOFF, { at: Date.now(), summary: redact(summary), sessionId });
 }
 
-/**
- * Stop: tells the user, never Claude, until when this session's cache is cheap to
- * come back to, and what to run before stepping away. A systemMessage costs no tokens.
- */
-function cacheNotice(input) {
+/** Stop: keep a large session's handoff current, so /clear loses nothing. Prints nothing. */
+function writeLargeSessionHandoff(input) {
   const guardMod = req('cache-guard.cjs');
   const configMod = req('config.cjs');
   const activity = sessionActivity(input, '');
-  if (!guardMod || !configMod || !activity) return null;
+  if (!guardMod || !configMod || !activity) return;
   try {
-    const sessionId = input.session_id || null;
-    const result = guardMod.afterReplyNotice({
-      tokens: activity.tokens,
-      model: activity.model,
-      cacheTtl: activity.cacheTtl,
-      sessionId,
-      state: readJsonFile(NOTICE_STATE),
-      settings: configMod.load().cacheGuard,
-    });
-    if (!result.message) return null;
-    writeHandoff(guardMod, activity, sessionId);
-    writeJsonFile(NOTICE_STATE, result.state);
-    return result.message;
+    const s = configMod.load().cacheGuard;
+    const pr = guardMod.price(activity.tokens, activity.model, activity.cacheTtl);
+    if (s.enabled && pr && pr.rewriteUsd - pr.freshUsd >= s.budgetUsd) {
+      writeHandoff(guardMod, activity, input.session_id || null);
+    }
+  } catch {
+    // The handoff is a convenience; never fail a stop over it.
+  }
+}
+
+const parseLine = (l) => {
+  try {
+    return JSON.parse(l);
   } catch {
     return null;
   }
+};
+
+/**
+ * Cache lines Claude relays at the end of its reply: why the last turn paid to
+ * re-send cached context (once per rewrite), and, in a large session, how long the
+ * cache stays cheap. The reply is the channel because the desktop app does not show
+ * a Stop hook's systemMessage: the user confirmed a notice sent that way never appeared.
+ */
+function cacheLines(input, activity, compacting) {
+  const guardMod = req('cache-guard.cjs');
+  const configMod = req('config.cjs');
+  const spendMod = req('outcome/spend.cjs');
+  const tsMod = req('outcome/transcript.cjs');
+  if (!guardMod || !configMod || !activity) return [];
+  const lines = [];
+  try {
+    const settings = configMod.load().cacheGuard;
+    const sessionId = input.session_id || null;
+    const now = Date.now();
+    const saved = readJsonFile(NOTICE_STATE);
+    const state = saved && saved.sessionId === sessionId ? saved : null;
+    // A session seen for the first time only reports rewrites from the last half hour.
+    const explainedAt = state ? Number(state.explainedAt || 0) : now - 30 * 60000;
+
+    const tPath = input.transcript_path || input.transcriptPath;
+    const tail = spendMod && tsMod && tPath ? tsMod.readTailLines(tPath, 2000000) : null;
+    if (tail) {
+      const fresh = spendMod.classifyRewrites(tail.map(parseLine).filter(Boolean)).filter((ev) => ev.at > explainedAt);
+      for (const ev of fresh.slice(-2)) {
+        const line = guardMod.explainRewrite(ev, settings);
+        if (line) lines.push(line);
+      }
+    }
+
+    // A compaction prompt already tells the user to shrink the session.
+    const notice = compacting
+      ? { message: null, state }
+      : guardMod.afterReplyNotice({
+        tokens: activity.tokens, model: activity.model, cacheTtl: activity.cacheTtl, sessionId, state, settings,
+      });
+    if (notice.message) lines.push(notice.message);
+    writeJsonFile(NOTICE_STATE, { ...(notice.state || {}), sessionId, explainedAt: now });
+  } catch {
+    // Advice is optional; never block the prompt.
+  }
+  return lines;
 }
 
 /**
@@ -385,10 +428,12 @@ function modeRecall() {
     }
   }
 
+  let advice = null;
   if (activity && activity.tokens) {
-    const advice = compactPrompt(activity.tokens, input, activity);
+    advice = compactPrompt(activity.tokens, input, activity);
     if (advice) out.push(advice);
   }
+  out.push(...cacheLines(input, activity, Boolean(advice)));
 
   if (out.length) process.stdout.write(`${out.join('\n')}\n`);
   process.exit(0);
@@ -526,8 +571,8 @@ function modeFinalize() {
 /**
  * Stop. Keeps a `rcskills loop` running: feeds its prompt back until the
  * completion promise is genuinely written or the iteration cap is reached.
- * Without a loop it may show the user a [cache] notice, which Claude never sees, so
- * it costs one spawn and no tokens either way.
+ * Without a loop it keeps a large session's handoff current. It prints nothing
+ * then, so it costs one spawn and no tokens.
  */
 function modeLoop() {
   const input = parseInput();
@@ -542,8 +587,7 @@ function modeLoop() {
     const out = decision.block || { systemMessage: `[loop] ${decision.stop}` };
     process.stdout.write(`${JSON.stringify(out)}\n`);
   } else {
-    const note = cacheNotice(input);
-    if (note) process.stdout.write(`${JSON.stringify({ systemMessage: note })}\n`);
+    writeLargeSessionHandoff(input);
   }
   process.exit(0);
 }

@@ -117,19 +117,29 @@ session at the cache-write rate before doing anything: 677k tokens on Opus 5 is
 ~$6.77 for one message. The 1-hour cache is not dependable for the full hour either:
 2 of 10 real idle gaps of 30-60 minutes rewrote it, against 1 of 70 gaps of 5-30.
 
-So after a reply in a session where that would cost $0.50+ more than a fresh one,
-you see (Claude does not, so it costs no tokens):
+So in a session where that would cost $0.50+ more than a fresh one, Claude ends its
+reply with:
 
 ```
-[cache] 290k tokens cached. Reply before 18:01 to keep it cheap; after that your next
-message can re-send it all for ~$2.90. Stepping away? Run /compact first, or /clear
-(~$0.56 to restart, with a summary of this session).
+367k tokens cached. Reply within 30 min to keep it cheap; after that your next message
+re-sends it all (~$3.67). Stepping away? /compact first, or /clear (~$0.56, keeps a summary).
 ```
 
-It repeats at most every 15 minutes unless the context grows by 100k. After `/clear`
-the new session is handed the summary: recent asks, files edited and the last reply,
-with secrets redacted. `/model` re-selecting the model already in use asks first,
-because it changes nothing but still re-caches everything.
+It repeats at most every 15 minutes unless the context grows by 100k, and stays out
+of the way when a `/compact` suggestion is already due. After any turn that paid to
+re-send cached context, the next reply says what caused it and how to avoid it:
+
+```
+The last turn re-sent 306k already-cached tokens (~$3.06) because the cache lapsed
+after 4h 54m idle. Fix: run /compact before stepping away.
+```
+
+The line goes through Claude's reply because the desktop app does not display a Stop
+hook's `systemMessage`. The first version used one; it ran, and nothing appeared.
+
+After `/clear` the new session is handed a summary: recent asks, files edited and the
+last reply, with secrets redacted. `/model` re-selecting the model already in use asks
+first, because it changes nothing but still re-caches everything.
 
 ```bash
 rcskills config cache-guard 1.00        # only when /clear would save $1+
@@ -144,25 +154,28 @@ or a token count) or `TOKEN_HARNESS_CACHE_GUARD` (`on`, `off` or dollars) in the
 
 ## What the numbers actually are
 
-`rcskills spend` on 2,874 real requests ($864 at list price) across 10 sessions:
+`rcskills spend` on 2,944 real requests ($886 at list price) across 10 sessions:
 
 ```
-cache reads    62.3%   re-reading context: compaction prompts target this
-cache writes   27.3%
-output         10.4%
+cache reads    61.7%   re-reading context: compaction prompts target this
+cache writes   27.7%
+output         10.6%
 
-cache rewrites of already-cached context, by cause:
-  39  $129.39  15.0%  expired while idle              after-reply notice
-   3   $18.77   2.2%  idle 30-60 min on a 1-hour cache after-reply notice
-   1    $3.47   0.4%  /model re-selected the same model asks first now
-   2    $0.96   0.1%  model switched                  Claude Code already asks
-   3    $1.36   0.2%  compaction                      expected
-   3   $16.48   1.9%  no local cause found            mid-turn or within minutes
+rewrites of already-cached context, by cause:
+  43  $137.26  15.5%  expired while idle               reply line before, explained after
+   3   $18.77   2.1%  idle 30-60 min on a 1-hour cache reply line before, explained after
+   1    $4.14   0.5%  effort changed (high -> max)     explained after
+   1    $3.47   0.4%  /model re-selected the same model asks first
+   2    $0.96   0.1%  model switched                   Claude Code already asks
+   3    $1.36   0.2%  compaction                       expected
+   2   $12.34   1.4%  no local cause                   explained after
 ```
 
-35 of the idle rewrites cost $0.50+ more than a fresh session; `/compact` or `/clear`
-before stepping away would have saved $124.69 (14.4%). The last 1.9% happened with no
-idle gap, command or model change in the transcript, so there is nothing local to fix.
+Each cause was tested against every request pair, not guessed: 1 of 1 effort changes
+and 1 of 1 same-model `/model` commands rewrote the cache; thinking toggles (3 of 56)
+and large tool-call batches (0 of 15) did not. The last two misses came 36 seconds and
+16 minutes after a warm request with nothing recorded between, so the cache was dropped
+on the API side. No local setting prevents that; a smaller context keeps it cheap.
 
 Only 5 shell outputs ever exceeded 12k characters, so capping command output would
 save almost nothing. The measurement said so before anything was built.
@@ -213,7 +226,7 @@ prices each prompt against the session's real context and stays silent otherwise
 ## Development
 
 ```bash
-npm run verify        # typecheck + skill lint + 315 tests
+npm run verify        # typecheck + skill lint + 320 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```

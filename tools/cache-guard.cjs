@@ -5,16 +5,15 @@ const { FRESH_SESSION_TOKENS, rate, normalizeModel } = require('./model-router/c
 /**
  * Keeps sessions from paying to re-cache context they already had cached.
  *
- * Measured on 2,821 real requests: rewrites of already-cached context cost $168,
- * 20% of all spend. Across ~2,700 consecutive request pairs the causes were: the
- * cache expiring while idle (39), idle gaps of 30-60 minutes on a nominal 1-hour
- * cache (2 of 10 such gaps rewrote, against 1 of 70 gaps of 5-30 minutes), a
- * `/model` command re-selecting the model already in use (1 of 1), and two misses
- * with no local cause.
+ * Measured on ~2,800 real request pairs, rewrites of already-cached context came
+ * from: the cache expiring while idle (39), idle gaps of 30-60 minutes on a nominal
+ * 1-hour cache (2 of 10 such gaps, against 1 of 70 gaps of 5-30 minutes), an effort
+ * change (1 of 1), a `/model` command re-selecting the model in use (1 of 1), and
+ * one miss with no local cause.
  *
- * So Claude Code is told nothing (zero tokens); the user is told, after a reply,
- * when the cache stops being reliable and what returning later will cost. Pure —
- * the hook does the reading and writing.
+ * Every line here reaches the user through Claude's reply. The desktop app does not
+ * show a Stop hook's systemMessage: the first version used one, and the user
+ * confirmed nothing appeared. Pure; the hook does the reading and writing.
  */
 
 const TTL_MS = { '1h': 3600000, '5m': 300000 };
@@ -66,23 +65,26 @@ function adviseColdCache(input) {
   const prev = input.state;
   if (prev && prev.sessionId === (input.sessionId || null) && prev.lastResponseAt === lastAt) return quiet;
 
-  const hours = Math.floor(idleMs / 3600000);
-  const minutes = Math.round((idleMs % 3600000) / 60000);
   return {
     block:
       `[cache] Not sent: this session's ${pr.oneHour ? '1-hour' : '5-minute'} prompt cache expired ` +
-      `${hours ? `${hours}h ${minutes}m` : `${minutes}m`} ago, so this message would first re-cache ` +
+      `${idle(idleMs)} ago, so this message would first re-cache ` +
       `${k(input.tokens)} tokens on ${normalizeModel(input.model)} (~$${pr.rewriteUsd.toFixed(2)}). /clear starts ` +
       `fresh for ~$${pr.freshUsd.toFixed(2)} with a summary of this session. Send the message again to continue here.`,
     state: { sessionId: input.sessionId || null, lastResponseAt: lastAt },
   };
 }
 
+function idle(ms) {
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.round((ms % 3600000) / 60000);
+  return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
 /**
- * After a reply in a session large enough that returning late is expensive: until
- * when the cache is dependable, and what to do before stepping away. Shown to the
- * user only, so it costs no tokens. Repeats at most every 15 minutes unless the
- * context has grown by 100k.
+ * In a session large enough that coming back late is expensive: a line Claude ends
+ * its reply with, saying how long the cache stays cheap and what to run before
+ * stepping away. At most every 15 minutes, unless the context grew by 100k.
  *
  * @param {{
  *   tokens: number, model?: string|null, cacheTtl?: '1h'|'5m'|null, now?: number,
@@ -105,28 +107,54 @@ function afterReplyNotice(input) {
     && now - Number(prev.at || 0) < NOTICE_EVERY_MS
     && tokens - Number(prev.tokens || 0) < NOTICE_GROWTH_TOKENS) return quiet;
 
-  const until = new Date(now + (pr.oneHour ? RELIABLE_1H_MS : TTL_MS['5m'])).toTimeString().slice(0, 5);
   return {
     message:
-      `[cache] ${k(tokens)} tokens cached. Reply before ${until} to keep it cheap; after that your next ` +
-      `message can re-send it all for ~$${pr.rewriteUsd.toFixed(2)}. Stepping away? Run /compact first, or ` +
-      `/clear (~$${pr.freshUsd.toFixed(2)} to restart, with a summary of this session).`,
+      `[cache] End your reply with this line for the user: "${k(tokens)} tokens cached. Reply within ` +
+      `${pr.oneHour ? '30 min' : '5 min'} to keep it cheap; after that your next message re-sends it all ` +
+      `(~$${pr.rewriteUsd.toFixed(2)}). Stepping away? /compact first, or /clear (~$${pr.freshUsd.toFixed(2)}, ` +
+      'keeps a summary)."',
     state: { sessionId: input.sessionId || null, at: now, tokens },
   };
 }
 
+const REASONS = {
+  expired: (ev) => [`the cache lapsed after ${idle(ev.idleMs)} idle`, 'run /compact before stepping away'],
+  lateInHour: (ev) => [`the cache lapsed after ${idle(ev.idleMs)} idle`, 'reply within 30 minutes, or run /compact before stepping away'],
+  effortChange: (ev) => [`effort changed from ${ev.fromEffort} to ${ev.toEffort}`, 'change effort right after a /compact'],
+  modelCommand: () => ['/model re-selected the model already in use', 'skip /model when the model is already right'],
+  modelSwitch: () => ['the model changed', 'switch models right after a /compact'],
+  other: () => ["nothing in this session caused it (the cache was dropped on Anthropic's side)", '/compact keeps any such miss cheap'],
+};
+
 /**
- * PreModelSwitch. Re-selecting the model already in use changes nothing but still
- * re-caches the whole context (measured: 347k tokens rewritten), so it asks first.
- * Real switches are left to Claude Code, which already confirms cache-missing ones.
+ * After a turn that paid to re-send already-cached context: what caused it and how
+ * to avoid it, for Claude to relay. Compaction is expected and never reported.
  *
- * @param {{from_model?: string, to_model?: string, prompt_cache_warm?: boolean,
+ * @param {{cause: string, tokens: number, usd: number, idleMs?: number, fromEffort?: string, toEffort?: string}} ev
+ * @param {{enabled?: boolean, budgetUsd?: number}} [settings]
+ */
+function explainRewrite(ev, settings = {}) {
+  const s = { ...DEFAULTS, ...settings };
+  const why = REASONS[ev.cause];
+  if (!s.enabled || !why || ev.usd < s.budgetUsd) return null;
+  const [reason, fix] = why(ev);
+  return `[cache] The last turn re-sent ${k(ev.tokens)} already-cached tokens (~$${ev.usd.toFixed(2)}) because ${reason}. ` +
+    `Tell the user in one line at the end of your reply, with the fix: ${fix}.`;
+}
+
+/**
+ * PreModelSwitch. Re-selecting the model already in use through `/model` changes
+ * nothing but still re-caches the whole context (measured: 347k tokens), so it asks
+ * first. Picker and SDK switches are left alone: a headless session refuses an "ask".
+ *
+ * @param {{from_model?: string, to_model?: string, source?: string, prompt_cache_warm?: boolean,
  *   context_tokens?: number, estimated_cache_write_usd?: number}} input
  */
 function adviseModelSwitch(input) {
   const from = normalizeModel(input.from_model);
   const to = normalizeModel(input.to_model);
   const tokens = Number(input.context_tokens || 0);
+  if (input.source !== undefined && input.source !== 'command') return null;
   if (!from || from !== to || input.prompt_cache_warm === false || !tokens) return null;
   const usd = Number(input.estimated_cache_write_usd) || (price(tokens, to, '1h') || { rewriteUsd: 0 }).rewriteUsd;
   return `[cache] Already on ${to}: this changes nothing but re-caches ${k(tokens)} tokens ` +
@@ -153,6 +181,6 @@ function handoffSummary(handoff) {
 }
 
 module.exports = {
-  adviseColdCache, afterReplyNotice, adviseModelSwitch, handoffSummary, price,
+  adviseColdCache, afterReplyNotice, explainRewrite, adviseModelSwitch, handoffSummary, price,
   RELIABLE_1H_MS, DEFAULTS,
 };

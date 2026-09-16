@@ -2,7 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { adviseColdCache, afterReplyNotice, adviseModelSwitch, handoffSummary, price } = require('./cache-guard.cjs');
+const {
+  adviseColdCache, afterReplyNotice, explainRewrite, adviseModelSwitch, handoffSummary, price,
+} = require('./cache-guard.cjs');
 
 const HOUR = 3600000;
 const MIN = 60000;
@@ -17,28 +19,26 @@ test('re-caching is priced at the cache-write rate, against a fresh 56k session'
   assert.strictEqual(price(500000, 'unknown-model', '1h'), null);
 });
 
-// ---- after-reply notice (the default) ----
+// ---- the line Claude ends its reply with (the default) ----
 
 const notice = (over = {}) => afterReplyNotice({
   tokens: 500000, model: 'claude-opus-5', cacheTtl: '1h', now: NOW, sessionId: 's1', state: null, ...over,
 });
 
-test('a large session is told after the reply until when the cache is dependable, and what to do', () => {
+test('a large session asks Claude to end its reply with how long the cache stays cheap', () => {
   const r = notice();
-  const until = new Date(NOW + 30 * MIN).toTimeString().slice(0, 5);
   assert.strictEqual(r.message,
-    `[cache] 500k tokens cached. Reply before ${until} to keep it cheap; after that your next message can ` +
-    're-send it all for ~$5.00. Stepping away? Run /compact first, or /clear (~$0.56 to restart, with a summary ' +
-    'of this session).');
+    '[cache] End your reply with this line for the user: "500k tokens cached. Reply within 30 min to keep it ' +
+    'cheap; after that your next message re-sends it all (~$5.00). Stepping away? /compact first, or /clear ' +
+    '(~$0.56, keeps a summary)."');
   assert.deepStrictEqual(r.state, { sessionId: 's1', at: NOW, tokens: 500000 });
 });
 
 test('a 5-minute cache is only promised 5 minutes', () => {
-  const until = new Date(NOW + 5 * MIN).toTimeString().slice(0, 5);
-  assert.match(String(notice({ cacheTtl: '5m' }).message), new RegExp(`Reply before ${until}`));
+  assert.match(String(notice({ cacheTtl: '5m' }).message), /Reply within 5 min/);
 });
 
-test('the notice repeats at most every 15 minutes, unless context grew by 100k', () => {
+test('the line repeats at most every 15 minutes, unless context grew by 100k', () => {
   const first = notice();
   assert.strictEqual(notice({ state: first.state, now: NOW + 10 * MIN }).message, null);
   assert.ok(notice({ state: first.state, now: NOW + 16 * MIN }).message);
@@ -46,13 +46,35 @@ test('the notice repeats at most every 15 minutes, unless context grew by 100k',
   assert.ok(notice({ state: { ...first.state, sessionId: 'other' }, now: NOW + MIN }).message);
 });
 
-test('small, unpriced or switched-off sessions get no notice', () => {
+test('small, unpriced or switched-off sessions get no line', () => {
   // 100k on Opus: $1.00 against $0.56 fresh, under the $0.50 budget.
   assert.strictEqual(notice({ tokens: 100000 }).message, null);
   assert.ok(notice({ tokens: 100000, settings: { budgetUsd: 0.25 } }).message);
   assert.strictEqual(notice({ model: 'unknown' }).message, null);
   assert.strictEqual(notice({ settings: { enabled: false } }).message, null);
   assert.strictEqual(notice({ tokens: 0 }).message, null);
+});
+
+// ---- explaining a rewrite after it happened ----
+
+const ev = (over = {}) => ({ cause: 'other', tokens: 584000, usd: 5.84, idleMs: 36000, ...over });
+
+test('every rewrite cause is explained with its own fix', () => {
+  assert.strictEqual(explainRewrite(ev({ cause: 'effortChange', fromEffort: 'high', toEffort: 'max', tokens: 414000, usd: 4.14 })),
+    '[cache] The last turn re-sent 414k already-cached tokens (~$4.14) because effort changed from high to max. ' +
+    'Tell the user in one line at the end of your reply, with the fix: change effort right after a /compact.');
+  assert.match(String(explainRewrite(ev({ cause: 'expired', idleMs: 3 * HOUR }))), /lapsed after 3h 0m idle\. .*run \/compact before stepping away/);
+  assert.match(String(explainRewrite(ev({ cause: 'lateInHour', idleMs: 38 * MIN }))), /lapsed after 38m idle\. .*reply within 30 minutes/);
+  assert.match(String(explainRewrite(ev({ cause: 'modelCommand' }))), /\/model re-selected the model already in use/);
+  assert.match(String(explainRewrite(ev({ cause: 'modelSwitch' }))), /the model changed\. .*switch models right after a \/compact/);
+  assert.match(String(explainRewrite(ev())), /dropped on Anthropic's side\)\. .*\/compact keeps any such miss cheap/);
+});
+
+test('compaction, cheap rewrites and a disabled guard are not reported', () => {
+  assert.strictEqual(explainRewrite(ev({ cause: 'compaction' })), null);
+  assert.strictEqual(explainRewrite(ev({ usd: 0.3 })), null);
+  assert.strictEqual(explainRewrite(ev(), { enabled: false }), null);
+  assert.strictEqual(explainRewrite(ev({ cause: 'unknown-cause' })), null);
 });
 
 // ---- block mode (opt-in) ----
@@ -93,9 +115,9 @@ test('block mode stays out of the way when warm, small, a slash command, or off'
 
 // ---- model switch ----
 
-test('re-selecting the model in use asks first, because it only re-caches', () => {
+test('a /model command re-selecting the model in use asks first, because it only re-caches', () => {
   const reason = adviseModelSwitch({
-    from_model: 'claude-opus-5', to_model: 'claude-opus-5', prompt_cache_warm: true,
+    from_model: 'claude-opus-5', to_model: 'claude-opus-5', source: 'command', prompt_cache_warm: true,
     context_tokens: 347000, estimated_cache_write_usd: 3.47,
   });
   assert.strictEqual(reason,
@@ -106,9 +128,11 @@ test('re-selecting the model in use asks first, because it only re-caches', () =
   })), /~\$0\.20/);
 });
 
-test('a real switch, a cold cache or an empty session is left to Claude Code', () => {
-  const base = { from_model: 'claude-opus-5', to_model: 'claude-sonnet-5', prompt_cache_warm: true, context_tokens: 300000 };
+test('real switches, picker or SDK switches, a cold cache and empty sessions are left alone', () => {
+  const base = { from_model: 'claude-opus-5', to_model: 'claude-sonnet-5', source: 'command', prompt_cache_warm: true, context_tokens: 300000 };
   assert.strictEqual(adviseModelSwitch(base), null);
+  assert.strictEqual(adviseModelSwitch({ ...base, to_model: 'claude-opus-5', source: 'picker' }), null);
+  assert.strictEqual(adviseModelSwitch({ ...base, to_model: 'claude-opus-5', source: 'sdk' }), null);
   assert.strictEqual(adviseModelSwitch({ ...base, to_model: 'claude-opus-5', prompt_cache_warm: false }), null);
   assert.strictEqual(adviseModelSwitch({ ...base, to_model: 'claude-opus-5', context_tokens: 0 }), null);
   assert.strictEqual(adviseModelSwitch({}), null);

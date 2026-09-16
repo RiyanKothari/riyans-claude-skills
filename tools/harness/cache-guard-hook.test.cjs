@@ -83,7 +83,7 @@ test('a warm session is never blocked', () => {
 test('the guard can be switched off per project', () => {
   const s = session([human('build it'), reply(3 * HOUR, 400000)]);
   assert.doesNotMatch(run(s, 'recall', { prompt: 'next step' }, { TOKEN_HARNESS_CACHE_GUARD: 'off' }), /"decision"/);
-  assert.strictEqual(run(s, 'loop', {}, { TOKEN_HARNESS_CACHE_GUARD: 'off' }).trim(), '');
+  assert.doesNotMatch(run(s, 'recall', { prompt: 'later' }, { TOKEN_HARNESS_CACHE_GUARD: 'off' }), /\[cache\]/);
   s.clean();
 });
 
@@ -96,24 +96,53 @@ test('the handoff never stores a secret from the transcript', () => {
   s.clean();
 });
 
-test('by default no message is held; the user is told after the reply instead, at no token cost', () => {
+test('by default no message is held; Claude is asked to end its reply with the cache line', () => {
   const s = session([
     human('build the quarterly report'),
     reply(1000, 398990, [{ type: 'text', text: 'Report built.' }]),
   ]);
-  assert.doesNotMatch(run(s, 'recall', { prompt: 'next' }), /"decision"/);
+  const out = run(s, 'recall', { prompt: 'next' });
+  assert.doesNotMatch(out, /"decision"/);
+  assert.match(out, /^\[cache\] End your reply with this line for the user: "400k tokens cached\. Reply within 30 min to keep it cheap; after that your next message re-sends it all \(~\$4\.00\)\. Stepping away\? \/compact first, or \/clear \(~\$0\.56, keeps a summary\)\."$/m);
+  assert.doesNotMatch(run(s, 'recall', { prompt: 'and then' }), /\[cache\]/, 'not repeated within 15 minutes');
 
-  const out = JSON.parse(run(s, 'loop', { stop_hook_active: false }).trim());
-  assert.deepStrictEqual(Object.keys(out), ['systemMessage'], 'shown to the user only, never to the model');
-  assert.match(out.systemMessage, /^\[cache\] 400k tokens cached\. Reply before \d\d:\d\d to keep it cheap; .*~\$4\.00\. Stepping away\? Run \/compact first/);
-  assert.strictEqual(run(s, 'loop', {}).trim(), '', 'not repeated within 15 minutes');
+  // The desktop app does not show a Stop hook's output, so it prints nothing and
+  // only keeps the handoff current.
+  assert.strictEqual(run(s, 'loop', {}).trim(), '');
   assert.match(fs.readFileSync(path.join(s.dir, '.claude', 'memory', 'handoff.json'), 'utf8'), /quarterly report/);
   s.clean();
 });
 
-test('a small session gets no notice after the reply', () => {
+test('a small session gets no cache line', () => {
   const s = session([human('x'), reply(1000, 30000)]);
-  assert.strictEqual(run(s, 'loop', {}).trim(), '');
+  assert.doesNotMatch(run(s, 'recall', { prompt: 'next' }), /\[cache\]/);
+  s.clean();
+});
+
+test('after a turn that paid to re-send cached context, the next reply says why and how to avoid it', () => {
+  const request = (id, ago, effort, read, write) => ({
+    type: 'assistant',
+    requestId: id,
+    effort,
+    timestamp: new Date(Date.now() - ago).toISOString(),
+    message: {
+      model: 'claude-opus-5',
+      content: [{ type: 'text', text: 'ok' }],
+      usage: {
+        input_tokens: 10,
+        cache_read_input_tokens: read,
+        cache_creation_input_tokens: write,
+        cache_creation: { ephemeral_1h_input_tokens: write, ephemeral_5m_input_tokens: 0 },
+      },
+    },
+  });
+  const s = session([
+    human('first'), request('r1', 10 * 60000, 'high', 400000, 1000),
+    human('think harder'), request('r2', 5 * 60000, 'max', 1000, 401000),
+  ]);
+  const out = run(s, 'recall', { prompt: 'next' });
+  assert.match(out, /\[cache\] The last turn re-sent 400k already-cached tokens \(~\$4\.00\) because effort changed from high to max\. Tell the user in one line at the end of your reply, with the fix: change effort right after a \/compact\./);
+  assert.doesNotMatch(run(s, 'recall', { prompt: 'again' }), /The last turn re-sent/, 'each rewrite is explained once');
   s.clean();
 });
 
@@ -128,6 +157,8 @@ test('re-selecting the model in use asks before re-caching; a real switch is lef
   assert.strictEqual(same.permissionDecision, 'ask');
   assert.match(same.permissionDecisionReason, /Already on claude-opus-5: .*347k tokens \(~\$3\.47\)/);
   assert.strictEqual(switchTo('claude-sonnet-5').trim(), '');
+  const picker = run(s, 'switch', { from_model: 'claude-opus-5', to_model: 'claude-opus-5', source: 'picker', context_tokens: 347000, prompt_cache_warm: true });
+  assert.strictEqual(picker.trim(), '', 'picker and SDK switches are never asked about: a headless session would refuse');
   s.clean();
 });
 

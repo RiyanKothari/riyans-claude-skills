@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { analyzeRecords, formatReport } = require('./spend.cjs');
+const { analyzeRecords, classifyRewrites, formatReport } = require('./spend.cjs');
 
 const T0 = Date.parse('2026-09-16T10:00:00Z');
 const MIN = 60000;
@@ -88,6 +88,21 @@ test('a /model command that re-selects the same model is named as the cause', ()
   ]);
   assert.strictEqual(r.rewrites.modelCommand.n, 1);
   assert.strictEqual(r.rewrites.other.n, 0);
+});
+
+test('an effort change that re-sends cached context is named, with both levels', () => {
+  const records = [
+    { ...req(0, { write: 300000 }), effort: 'high' },
+    { ...req(MIN, { read: 300000 }), effort: 'high' },
+    { ...req(2 * MIN, { write: 300000 }), effort: 'max' },
+  ];
+  const events = classifyRewrites(records);
+  assert.strictEqual(events.length, 1);
+  assert.strictEqual(events[0].cause, 'effortChange');
+  assert.strictEqual(events[0].fromEffort, 'high');
+  assert.strictEqual(events[0].toEffort, 'max');
+  assert.strictEqual(events[0].tokens, 300000);
+  assert.strictEqual(analyzeRecords(records).rewrites.effortChange.n, 1);
 });
 
 test('a 5-minute cache counts as expired after 5 minutes', () => {
