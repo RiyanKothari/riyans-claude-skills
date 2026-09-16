@@ -56,3 +56,28 @@ test('a hostile session id cannot select another file', () => {
   assert.strictEqual(sessionTranscript({ CLAUDE_CODE_SESSION_ID: '../C--work-other/victim' }, p.root), null);
   p.clean();
 });
+
+test('test files a script wrote through Bash count, whether committed or not', () => {
+  const { execFileSync } = require('node:child_process');
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'turn-git-'));
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...args], { cwd: repo, stdio: 'ignore' });
+  git('init', '-q');
+  // Left uncommitted from before the turn: not this turn's work.
+  fs.writeFileSync(path.join(repo, 'old.test.cjs'), '');
+  const before = new Date(Date.now() - 3600000);
+  fs.utimesSync(path.join(repo, 'old.test.cjs'), before, before);
+
+  const tp = path.join(repo, 'transcript.jsonl');
+  const prompt = { ...human('patch the tests'), timestamp: new Date(Date.now() - 60000).toISOString() };
+  fs.writeFileSync(tp, `${JSON.stringify(prompt)}\n${JSON.stringify(wrote(path.join(repo, 'README.md')))}\n`);
+
+  fs.writeFileSync(path.join(repo, 'a.test.cjs'), '');
+  git('add', 'a.test.cjs');
+  git('commit', '-q', '-m', 'patched by script');
+  fs.writeFileSync(path.join(repo, 'b.test.cjs'), '');
+
+  const ev = gatherTurnEvidence(tp, repo);
+  assert.strictEqual(ev.testsAdded, 2);
+  assert.strictEqual(ev.docsUpdated, true);
+  fs.rmSync(repo, { recursive: true, force: true });
+});

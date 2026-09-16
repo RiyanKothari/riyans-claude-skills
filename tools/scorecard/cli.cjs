@@ -98,7 +98,7 @@ function sessionTranscript(env = process.env, projectsDir) {
  * @param {string|null} [transcriptPath]
  * @returns {{testsAdded?: number, docsUpdated?: boolean, toolCount?: number, tier?: string}}
  */
-function gatherTurnEvidence(transcriptPath) {
+function gatherTurnEvidence(transcriptPath, cwd = process.cwd()) {
   const p = transcriptPath || sessionTranscript();
   if (!p) return {};
 
@@ -111,7 +111,9 @@ function gatherTurnEvidence(transcriptPath) {
   }
   if (!turn) return {};
 
-  const files = turn.files || [];
+  // Files written by a script run through Bash never appear as Edit or Write calls,
+  // so a turn that patched four test files in one command scored as adding one.
+  const files = [...new Set([...(turn.files || []), ...gitFilesSince(turn.timestamp, cwd)])];
   const testsAdded = files.filter((f) => /\.test\.[cm]?js$/.test(f)).length;
   // In a skills repo most docs are SKILL.md and references/, not just README.
   // This scored a turn that updated two skill docs as "no docs".
@@ -131,6 +133,37 @@ function gatherTurnEvidence(transcriptPath) {
   }
 
   return out;
+}
+
+/**
+ * Files git says changed since the turn began: committed since then, or modified
+ * since then and still uncommitted. Empty outside a git repository.
+ *
+ * @param {string|null|undefined} since ISO timestamp of the turn's prompt
+ * @param {string} cwd
+ * @returns {string[]}
+ */
+function gitFilesSince(since, cwd) {
+  const start = Date.parse(String(since || ''));
+  if (!start) return [];
+  const { execFileSync } = require('child_process');
+  const git = (args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  try {
+    const committed = git(['log', `--since=${new Date(start).toISOString()}`, '--name-only', '--pretty=format:']);
+    const pending = git(['status', '--porcelain'])
+      .split('\n')
+      .map((l) => l.slice(3).trim())
+      .filter((f) => {
+        try {
+          return f && fs.statSync(path.join(cwd, f)).mtimeMs >= start;
+        } catch {
+          return false;
+        }
+      });
+    return [...committed.split('\n').map((l) => l.trim()).filter(Boolean), ...pending];
+  } catch {
+    return [];
+  }
 }
 
 function readLog() {
