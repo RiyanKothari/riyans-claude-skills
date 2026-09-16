@@ -142,18 +142,21 @@ test('rcskills config sets and shows the setting from any directory', () => {
 test('the cache guard is on at $0.50 by default, and settable from file, CLI and env', () => {
   delete process.env.TOKEN_HARNESS_CACHE_GUARD;
   const c = withConfig();
-  assert.deepStrictEqual(load({}).cacheGuard, { enabled: true, budgetUsd: 0.5 });
+  assert.deepStrictEqual(load({}).cacheGuard, { enabled: true, budgetUsd: 0.5, mode: 'notify' });
 
-  assert.deepStrictEqual(set('cache-guard', '$1.25'), { enabled: true, budgetUsd: 1.25 });
+  assert.deepStrictEqual(set('cache-guard', '$1.25'), { enabled: true, budgetUsd: 1.25, mode: 'notify' });
   set('compact', 'off');
-  assert.deepStrictEqual(load({}).cacheGuard, { enabled: true, budgetUsd: 1.25 }, 'other settings keep it');
+  assert.deepStrictEqual(load({}).cacheGuard, { enabled: true, budgetUsd: 1.25, mode: 'notify' }, 'other settings keep it');
+  assert.strictEqual(set('cache-guard', 'block').mode, 'block');
+  assert.strictEqual(load({}).cacheGuard.budgetUsd, 1.25, 'switching mode keeps the budget');
   set('cache-guard', 'off');
   assert.strictEqual(load({}).cacheGuard.enabled, false);
   assert.strictEqual(load({}).compact.enabled, false);
 
   assert.strictEqual(load({ TOKEN_HARNESS_CACHE_GUARD: 'on' }).cacheGuard.enabled, true);
   assert.strictEqual(load({ TOKEN_HARNESS_CACHE_GUARD: '2' }).cacheGuard.budgetUsd, 2);
-  assert.throws(() => set('cache-guard', 'sometimes'), /on, off or a dollar amount/);
+  assert.strictEqual(load({ TOKEN_HARNESS_CACHE_GUARD: 'block' }).cacheGuard.mode, 'block');
+  assert.throws(() => set('cache-guard', 'sometimes'), /on, off, notify, block or a dollar amount/);
   assert.match(describe(load({})), /cache guard:\s+off/);
   c.clean();
 });

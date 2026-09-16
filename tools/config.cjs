@@ -23,9 +23,10 @@ const DEFAULTS = {
   },
   cacheGuard: {
     enabled: true,
-    // Hold a message back once when re-caching an expired session costs this much
-    // more than starting a fresh one.
+    // Act when re-caching the session would cost this much more than a fresh one.
     budgetUsd: 0.5,
+    // notify: tell the user after a reply. block: also hold the first message after expiry.
+    mode: 'notify',
   },
 };
 
@@ -114,13 +115,19 @@ function sanitizeGuard(raw) {
   return {
     enabled: r.enabled !== false,
     budgetUsd: positiveFloat(r.budgetUsd) || DEFAULTS.cacheGuard.budgetUsd,
+    mode: r.mode === 'block' ? 'block' : 'notify',
   };
 }
 
-/** on | off | <usd>. Returns false when the value is not one of those. */
+/** on | off | notify | block | <usd>. Returns false when the value is not one of those. */
 function applyGuard(guard, value) {
   const v = String(value ?? '').trim().toLowerCase().replace(/^\$/, '');
   const usd = positiveFloat(v);
+  if (v === 'notify' || v === 'block') {
+    guard.enabled = true;
+    guard.mode = v;
+    return true;
+  }
   if (v === 'off' || v === 'false' || v === '0') guard.enabled = false;
   else if (v === 'on' || v === 'true') guard.enabled = true;
   else if (usd) {
@@ -144,7 +151,7 @@ function set(key, value) {
   if (key === 'cache-guard') {
     const cacheGuard = sanitizeGuard({ ...DEFAULTS.cacheGuard, ...(current.cacheGuard || {}) });
     if (!applyGuard(cacheGuard, value)) {
-      throw new Error(`cache-guard expects on, off or a dollar amount, got "${value}"`);
+      throw new Error(`cache-guard expects on, off, notify, block or a dollar amount, got "${value}"`);
     }
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, `${JSON.stringify({ ...current, cacheGuard }, null, 2)}\n`, 'utf8');
@@ -184,12 +191,15 @@ function describe(settings) {
   }
   lines.push(`  then every:       ${k(c.remindEvery)} tokens of further growth`);
   const g = settings.cacheGuard || DEFAULTS.cacheGuard;
-  lines.push(`cache guard:        ${g.enabled ? 'on' : 'off'}`);
-  lines.push(`  holds a message:  once, when an expired cache costs $${g.budgetUsd}+ more to re-cache than a fresh session`);
+  lines.push(`cache guard:        ${g.enabled ? 'on' : 'off'} (${g.mode})`);
+  lines.push(`  acts when:        re-caching the session would cost $${g.budgetUsd}+ more than a fresh one`);
+  lines.push(`  then:             ${g.mode === 'block'
+    ? 'holds the first message after the cache expires, once'
+    : 'tells you after a reply until when the cache is cheap; never holds a message'}`);
   lines.push(`config file:        ${configPath()}`);
   lines.push('env overrides:      TOKEN_HARNESS_COMPACT=on|off|dynamic|<tokens>, '
     + 'TOKEN_HARNESS_COMPACT_BUDGET=<usd>, TOKEN_HARNESS_COMPACT_REMIND=<tokens>, '
-    + 'TOKEN_HARNESS_CACHE_GUARD=on|off|<usd>');
+    + 'TOKEN_HARNESS_CACHE_GUARD=on|off|notify|block|<usd>');
   return lines.join('\n');
 }
 
@@ -200,7 +210,7 @@ if (require.main === module) {
     console.log(describe(load()));
   } catch (e) {
     console.error(e.message);
-    console.error('usage: rcskills config [compact <on|off|dynamic|tokens>] [compact-budget <usd>] [compact-remind <tokens>] [cache-guard <on|off|usd>]');
+    console.error('usage: rcskills config [compact <on|off|dynamic|tokens>] [compact-budget <usd>] [compact-remind <tokens>] [cache-guard <on|off|notify|block|usd>]');
     process.exitCode = 1;
   }
 }

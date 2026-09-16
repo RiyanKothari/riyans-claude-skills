@@ -47,9 +47,9 @@ test('a cache rewritten after an idle gap is counted as expired and guardable', 
   ]);
   assert.strictEqual(r.rewrites.expired.n, 1);
   assert.strictEqual(Number(r.rewrites.expired.usd.toFixed(2)), 4);
-  assert.strictEqual(r.guardable.n, 1);
+  assert.strictEqual(r.avoidable.n, 1);
   // $4.00 rewrite less a ~$0.56 fresh session.
-  assert.strictEqual(Number(r.guardable.usd.toFixed(2)), 3.44);
+  assert.strictEqual(Number(r.avoidable.usd.toFixed(2)), 3.44);
 });
 
 test('a large new tool result is growth, not a rewrite', () => {
@@ -71,6 +71,23 @@ test('model switches and compactions are told apart from expiry', () => {
   assert.strictEqual(r.rewrites.modelSwitch.n, 1);
   assert.strictEqual(r.rewrites.compaction.n, 1);
   assert.strictEqual(r.rewrites.expired.n, 0);
+});
+
+test('a 1-hour cache rewritten after 30-60 idle minutes is its own, avoidable cause', () => {
+  const r = analyzeRecords([req(0, { write: 400000 }), req(40 * MIN, { write: 400000 })]);
+  assert.strictEqual(r.rewrites.lateInHour.n, 1);
+  assert.strictEqual(r.rewrites.expired.n, 0);
+  assert.strictEqual(r.avoidable.n, 1);
+});
+
+test('a /model command that re-selects the same model is named as the cause', () => {
+  const r = analyzeRecords([
+    req(0, { write: 350000 }),
+    { type: 'user', message: { content: '<command-name>/model</command-name> <command-args>claude-opus-5</command-args>' } },
+    req(MIN, { write: 350000 }),
+  ]);
+  assert.strictEqual(r.rewrites.modelCommand.n, 1);
+  assert.strictEqual(r.rewrites.other.n, 0);
 });
 
 test('a 5-minute cache counts as expired after 5 minutes', () => {
@@ -114,5 +131,5 @@ test('the report explains each rewrite cause and the guard saving', () => {
   const text = formatReport(r);
   assert.match(text, /1 session file\(s\), 2 requests/);
   assert.match(text, /cache expired while idle/);
-  assert.match(text, /the guard holds 1 of the expired ones; \/clear on each saves \$3\.44/);
+  assert.match(text, /1 idle rewrites cost \$0\.50\+ over a fresh session: \/compact or \/clear before stepping away saves \$3\.44/);
 });

@@ -47,6 +47,7 @@ const HANDOFF = path.join(DATA, 'handoff.json');
 const COMPACT_STATE = path.join(DATA, 'compact-state.json');
 const SWITCH_STATE = path.join(DATA, 'model-switch-state.json');
 const GUARD_STATE = path.join(DATA, 'cache-guard-state.json');
+const NOTICE_STATE = path.join(DATA, 'cache-notice-state.json');
 // Pinned policy lives in the harness repo's own store and follows every project.
 const HARNESS_DB = path.join(HARNESS_ROOT, '.claude', 'memory', 'records.jsonl');
 
@@ -234,6 +235,65 @@ function modelSwitchNote(activity, input, scoreMod) {
     `about 60% less, and \`/model opus\` switches back for hard work.${rewrite}`;
 }
 
+/** A redacted summary of this session, which SessionStart shows after /clear. */
+function writeHandoff(guardMod, activity, sessionId) {
+  const storeMod = req('memory/store.cjs');
+  const redact = storeMod && storeMod.redactSecrets ? storeMod.redactSecrets : (s) => s;
+  const summary = guardMod.handoffSummary(activity.handoff);
+  if (summary) writeJsonFile(HANDOFF, { at: Date.now(), summary: redact(summary), sessionId });
+}
+
+/**
+ * Stop: tells the user, never Claude, until when this session's cache is cheap to
+ * come back to, and what to run before stepping away. A systemMessage costs no tokens.
+ */
+function cacheNotice(input) {
+  const guardMod = req('cache-guard.cjs');
+  const configMod = req('config.cjs');
+  const activity = sessionActivity(input, '');
+  if (!guardMod || !configMod || !activity) return null;
+  try {
+    const sessionId = input.session_id || null;
+    const result = guardMod.afterReplyNotice({
+      tokens: activity.tokens,
+      model: activity.model,
+      cacheTtl: activity.cacheTtl,
+      sessionId,
+      state: readJsonFile(NOTICE_STATE),
+      settings: configMod.load().cacheGuard,
+    });
+    if (!result.message) return null;
+    writeHandoff(guardMod, activity, sessionId);
+    writeJsonFile(NOTICE_STATE, result.state);
+    return result.message;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * PreModelSwitch. Re-selecting the model already in use only re-caches the context,
+ * so the user is asked first. Runs only when the model changes: no per-turn cost.
+ */
+function modeSwitch() {
+  const input = parseInput();
+  const guardMod = req('cache-guard.cjs');
+  const configMod = req('config.cjs');
+  let reason = null;
+  try {
+    const enabled = !configMod || configMod.load().cacheGuard.enabled;
+    reason = guardMod && enabled ? guardMod.adviseModelSwitch(input) : null;
+  } catch {
+    reason = null;
+  }
+  if (reason) {
+    process.stdout.write(`${JSON.stringify({
+      hookSpecificOutput: { hookEventName: 'PreModelSwitch', permissionDecision: 'ask', permissionDecisionReason: reason },
+    })}\n`);
+  }
+  process.exit(0);
+}
+
 /**
  * Holds the first message after the prompt cache expires, once, when re-caching this
  * session costs clearly more than starting fresh. Writes a handoff first, so /clear
@@ -257,10 +317,7 @@ function coldCacheBlock(input, prompt, activity) {
     });
     if (!result.block) return null;
 
-    const storeMod = req('memory/store.cjs');
-    const redact = storeMod && storeMod.redactSecrets ? storeMod.redactSecrets : (s) => s;
-    const summary = guardMod.handoffSummary(activity.handoff);
-    if (summary) writeJsonFile(HANDOFF, { at: Date.now(), summary: redact(summary), sessionId });
+    writeHandoff(guardMod, activity, sessionId);
     writeJsonFile(GUARD_STATE, result.state);
     return result.block;
   } catch {
@@ -469,7 +526,8 @@ function modeFinalize() {
 /**
  * Stop. Keeps a `rcskills loop` running: feeds its prompt back until the
  * completion promise is genuinely written or the iteration cap is reached.
- * Silent when this session has no loop, so it costs one spawn and no tokens.
+ * Without a loop it may show the user a [cache] notice, which Claude never sees, so
+ * it costs one spawn and no tokens either way.
  */
 function modeLoop() {
   const input = parseInput();
@@ -483,6 +541,9 @@ function modeLoop() {
   if (decision) {
     const out = decision.block || { systemMessage: `[loop] ${decision.stop}` };
     process.stdout.write(`${JSON.stringify(out)}\n`);
+  } else {
+    const note = cacheNotice(input);
+    if (note) process.stdout.write(`${JSON.stringify({ systemMessage: note })}\n`);
   }
   process.exit(0);
 }
@@ -496,4 +557,5 @@ if (mode === 'core') modeCore();
 else if (mode === 'recall') modeRecall();
 else if (mode === 'loop') modeLoop();
 else if (mode === 'finalize') modeFinalize();
+else if (mode === 'switch') modeSwitch();
 else process.exit(0);

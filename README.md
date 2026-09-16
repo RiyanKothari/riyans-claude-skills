@@ -50,11 +50,12 @@ Each hook is a node process (~166 ms measured), so this is a real cost choice.
 | Profile | Hooks | Per-turn | Use when |
 |---|---|---|---|
 | `minimal` | none | zero | You want the skills and CLI only |
-| `standard` | core, recall, loop | ~2 spawns | Default. Memory and `/ralph-loop` work automatically |
+| `standard` | core, recall, loop, switch | ~2 spawns | Default. Memory, cache notices and `/ralph-loop` work automatically |
 | `strict` | + finalize | ~3 spawns | You want the router to learn from outcomes |
 
-The `loop` hook runs at every stop but prints nothing and costs no tokens unless
-this session started a loop.
+The `loop` hook runs at every stop and costs no tokens: it feeds a loop's prompt
+back only when this session started one, and otherwise may show you a `[cache]`
+notice that Claude never sees. `switch` runs only when the model changes.
 
 No profile registers a `PostToolUse` hook. That absence is load-bearing and has
 a test asserting it.
@@ -111,18 +112,29 @@ rcskills config compact off             # never prompt
 
 ### Cache guard
 
-A message sent after the prompt cache expires (an hour idle, by default) makes the
-model re-read the whole session at the cache-write rate before doing anything: 677k
-tokens on Opus 5 is ~$6.77 for one message. The guard holds the first such message
-once and shows the price. `/clear` starts fresh for ~$0.56 and the new session is
-given a summary of the old one (recent asks, files edited, last reply, secrets
-redacted). Sending the same message again goes through. It stays silent when the
-cache is warm, for slash commands, and when a fresh session would save less than
-the budget.
+A message sent after the prompt cache lapses makes the model re-read the whole
+session at the cache-write rate before doing anything: 677k tokens on Opus 5 is
+~$6.77 for one message. The 1-hour cache is not dependable for the full hour either:
+2 of 10 real idle gaps of 30-60 minutes rewrote it, against 1 of 70 gaps of 5-30.
+
+So after a reply in a session where that would cost $0.50+ more than a fresh one,
+you see (Claude does not, so it costs no tokens):
+
+```
+[cache] 290k tokens cached. Reply before 18:01 to keep it cheap; after that your next
+message can re-send it all for ~$2.90. Stepping away? Run /compact first, or /clear
+(~$0.56 to restart, with a summary of this session).
+```
+
+It repeats at most every 15 minutes unless the context grows by 100k. After `/clear`
+the new session is handed the summary: recent asks, files edited and the last reply,
+with secrets redacted. `/model` re-selecting the model already in use asks first,
+because it changes nothing but still re-caches everything.
 
 ```bash
-rcskills config cache-guard 1.00        # hold only when /clear saves $1+
-rcskills config cache-guard off         # never hold a message
+rcskills config cache-guard 1.00        # only when /clear would save $1+
+rcskills config cache-guard block       # also hold the first message after expiry, once
+rcskills config cache-guard off
 ```
 
 Settings live in `~/.claude/token-harness/config.json` and apply to every project.
@@ -132,20 +144,25 @@ or a token count) or `TOKEN_HARNESS_CACHE_GUARD` (`on`, `off` or dollars) in the
 
 ## What the numbers actually are
 
-`rcskills spend` on 2,821 real requests ($854 at list price) across 10 sessions:
+`rcskills spend` on 2,874 real requests ($864 at list price) across 10 sessions:
 
 ```
-cache reads    62.4%   re-reading context: compaction prompts target this
-cache writes   27.4%
-output         10.2%
+cache reads    62.3%   re-reading context: compaction prompts target this
+cache writes   27.3%
+output         10.4%
 
-cache rewrites of already-cached context:
-  39  $129.39  15.1%  expired while idle   <- the cache guard holds 32 of these;
-                                             /clear on each saves $107.60 (12.6%)
-   7   $38.72   4.5%  prefix changed for an unknown reason
-   2    $0.96   0.1%  model switched (Claude Code already asks first)
-   3    $1.36   0.2%  compaction
+cache rewrites of already-cached context, by cause:
+  39  $129.39  15.0%  expired while idle              after-reply notice
+   3   $18.77   2.2%  idle 30-60 min on a 1-hour cache after-reply notice
+   1    $3.47   0.4%  /model re-selected the same model asks first now
+   2    $0.96   0.1%  model switched                  Claude Code already asks
+   3    $1.36   0.2%  compaction                      expected
+   3   $16.48   1.9%  no local cause found            mid-turn or within minutes
 ```
+
+35 of the idle rewrites cost $0.50+ more than a fresh session; `/compact` or `/clear`
+before stepping away would have saved $124.69 (14.4%). The last 1.9% happened with no
+idle gap, command or model change in the transcript, so there is nothing local to fix.
 
 Only 5 shell outputs ever exceeded 12k characters, so capping command output would
 save almost nothing. The measurement said so before anything was built.
@@ -196,7 +213,7 @@ prices each prompt against the session's real context and stays silent otherwise
 ## Development
 
 ```bash
-npm run verify        # typecheck + skill lint + 308 tests
+npm run verify        # typecheck + skill lint + 315 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```

@@ -15,8 +15,8 @@ const MARKER = 'riyans-claude-skills';
  */
 const PROFILES = {
   minimal: { hooks: [], desc: 'skill only, no hooks, zero per-turn overhead' },
-  standard: { hooks: ['core', 'recall', 'loop'], desc: 'fixed core at session start + per-prompt recall + ralph loop' },
-  strict: { hooks: ['core', 'recall', 'loop', 'finalize'], desc: 'standard + outcome capture (the learning loop)' },
+  standard: { hooks: ['core', 'recall', 'loop', 'switch'], desc: 'fixed core at session start + per-prompt recall + ralph loop + cache notices' },
+  strict: { hooks: ['core', 'recall', 'loop', 'switch', 'finalize'], desc: 'standard + outcome capture (the learning loop)' },
 };
 
 const HOOK_SPEC = {
@@ -24,6 +24,8 @@ const HOOK_SPEC = {
   recall: { event: 'UserPromptSubmit', timeout: 8000 },
   loop: { event: 'Stop', timeout: 6000 },
   finalize: { event: 'Stop', timeout: 6000 },
+  // Fires only when the model changes, so it adds nothing per turn.
+  switch: { event: 'PreModelSwitch', timeout: 6000 },
 };
 
 function claudeDir(global) {

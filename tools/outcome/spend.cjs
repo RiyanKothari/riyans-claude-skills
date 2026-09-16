@@ -18,6 +18,8 @@ const { findTranscripts } = require('./transcript.cjs');
 const REWRITE_MIN_TOKENS = 30000;
 const LARGE_OUTPUT_CHARS = 12000;
 const GUARD_BUDGET_USD = require('../config.cjs').DEFAULTS.cacheGuard.budgetUsd;
+const { RELIABLE_1H_MS } = require('../cache-guard.cjs');
+const MODEL_COMMAND = '<command-name>/model</command-name>';
 
 const approxTokens = (s) => Math.ceil(String(s || '').length / 4);
 
@@ -51,11 +53,19 @@ function newReport() {
     sessions: 0,
     requests: 0,
     usd: { read: 0, write: 0, fresh: 0, out: 0 },
-    rewrites: { expired: { n: 0, usd: 0 }, modelSwitch: { n: 0, usd: 0 }, compaction: { n: 0, usd: 0 }, other: { n: 0, usd: 0 } },
+    rewrites: {
+      expired: { n: 0, usd: 0 },
+      lateInHour: { n: 0, usd: 0 },
+      modelCommand: { n: 0, usd: 0 },
+      modelSwitch: { n: 0, usd: 0 },
+      compaction: { n: 0, usd: 0 },
+      other: { n: 0, usd: 0 },
+    },
     content: {},
     largeOutputs: { n: 0, tokens: 0 },
-    // Expired rewrites the cache guard would have held, and what /clear would have saved.
-    guardable: { n: 0, usd: 0 },
+    // Idle rewrites costing clearly more than a fresh session: what /compact or /clear
+    // before stepping away would have saved.
+    avoidable: { n: 0, usd: 0 },
   };
 }
 
@@ -73,6 +83,7 @@ function analyzeRecords(records, report = newReport()) {
   const boundaries = [];
   let prev = null;
   let compactedSincePrev = false;
+  let modelCommandSincePrev = false;
 
   records.forEach((r, i) => {
     if (r && r.type === 'system' && r.subtype === 'compact_boundary') {
@@ -80,6 +91,8 @@ function analyzeRecords(records, report = newReport()) {
       compactedSincePrev = true;
       return;
     }
+    const said = r && r.type === 'user' && r.message && r.message.content;
+    if (typeof said === 'string' && said.includes(MODEL_COMMAND)) modelCommandSincePrev = true;
     const u = r && r.type === 'assistant' && r.message && r.message.usage;
     if (!u) return;
     const id = r.requestId || r.message.id || `line-${i}`;
@@ -106,23 +119,27 @@ function analyzeRecords(records, report = newReport()) {
     if (prev && rewritten >= REWRITE_MIN_TOKENS) {
       const share = rewritten / created;
       const ttlMs = prev.oneHour ? 3600000 : 300000;
+      const idle = at && prev.at ? at - prev.at : 0;
       let cause = 'other';
       if (compactedSincePrev) cause = 'compaction';
       else if (cost.normalizeModel(prev.model) !== cost.normalizeModel(r.message.model)) cause = 'modelSwitch';
-      else if (at && prev.at && at - prev.at >= ttlMs) cause = 'expired';
+      else if (modelCommandSincePrev) cause = 'modelCommand';
+      else if (idle >= ttlMs) cause = 'expired';
+      else if (prev.oneHour && idle >= RELIABLE_1H_MS) cause = 'lateInHour';
       report.rewrites[cause].n++;
       report.rewrites[cause].usd += writeUsd * share;
-      if (cause === 'expired') {
+      if (cause === 'expired' || cause === 'lateInHour') {
         const fresh = (cost.FRESH_SESSION_TOKENS * p.in * (prev.oneHour ? cost.CACHE_WRITE_1H : cost.CACHE_WRITE_5M)) / 1e6;
         if (writeUsd * share - fresh >= GUARD_BUDGET_USD) {
-          report.guardable.n++;
-          report.guardable.usd += writeUsd * share - fresh;
+          report.avoidable.n++;
+          report.avoidable.usd += writeUsd * share - fresh;
         }
       }
     }
     // The cache lifetime is known from the last request that wrote one.
     prev = { at, model: r.message.model, oneHour: created ? oneHour > 0 : Boolean(prev && prev.oneHour), context };
     compactedSincePrev = false;
+    modelCommandSincePrev = false;
   });
   if (!requests.length) return report;
   report.sessions++;
@@ -195,16 +212,19 @@ function formatReport(report, top = 12) {
     'large mid-session cache rewrites:',
   ];
   const why = {
-    expired: 'cache expired while idle (the cache guard targets these)',
+    expired: 'cache expired while idle (after-reply notice)',
+    lateInHour: 'idle 30-60 min, where a 1-hour cache is unreliable (after-reply notice)',
+    modelCommand: '/model re-selected the model in use (now asks first)',
     modelSwitch: 'model switched (Claude Code confirms these)',
     compaction: 'context compacted (expected, and small)',
-    other: 'something else changed the prompt prefix',
+    other: 'no local cause found',
   };
   for (const [k, v] of Object.entries(report.rewrites)) {
     lines.push(`  ${String(v.n).padStart(4)}  ${money(v.usd).padStart(9)}  ${pct(v.usd).padStart(6)}  ${why[k]}`);
   }
-  if (report.guardable.n) {
-    lines.push(`  the guard holds ${report.guardable.n} of the expired ones; /clear on each saves ${money(report.guardable.usd)} (${pct(report.guardable.usd)})`);
+  if (report.avoidable.n) {
+    lines.push(`  ${report.avoidable.n} idle rewrites cost $${GUARD_BUDGET_USD.toFixed(2)}+ over a fresh session: /compact or /clear ` +
+      `before stepping away saves ${money(report.avoidable.usd)} (${pct(report.avoidable.usd)})`);
   }
   lines.push('', 'context by lifetime re-read cost (what it cost to keep it in context):');
   Object.entries(report.content)
