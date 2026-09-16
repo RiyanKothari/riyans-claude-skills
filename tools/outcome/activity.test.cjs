@@ -116,3 +116,23 @@ test('no human turn in the tail gives an unknown phase', () => {
 test('a missing transcript returns null rather than throwing', () => {
   assert.strictEqual(recentActivity(path.join(os.tmpdir(), `nope-${Math.random()}.jsonl`)), null);
 });
+
+test('the last response time and cache lifetime are read, for the cold-cache guard', () => {
+  const at = '2026-09-16T08:00:00.000Z';
+  const a = phaseOf([
+    human('build it'),
+    { type: 'assistant', timestamp: '2026-09-16T07:00:00.000Z', message: { model: 'claude-opus-5', usage: { cache_creation_input_tokens: 5, cache_creation: { ephemeral_1h_input_tokens: 5 } } } },
+    { type: 'assistant', timestamp: at, message: { model: 'claude-opus-5', content: [{ type: 'text', text: 'Built.' }, edit('/r/a.js')], usage: { cache_read_input_tokens: 9 } } },
+  ], 'next');
+  assert.strictEqual(a.lastResponseAt, Date.parse(at));
+  assert.strictEqual(a.cacheTtl, '1h');
+  assert.deepStrictEqual(a.handoff, { prompts: ['build it'], files: ['/r/a.js'], lastText: 'Built.' });
+});
+
+test('a 5-minute cache write is recognised', () => {
+  const a = phaseOf([
+    human('x'),
+    { type: 'assistant', timestamp: '2026-09-16T08:00:00.000Z', message: { model: 'claude-opus-5', usage: { cache_creation_input_tokens: 5, cache_creation: { ephemeral_5m_input_tokens: 5 } } } },
+  ], 'next');
+  assert.strictEqual(a.cacheTtl, '5m');
+});

@@ -46,6 +46,7 @@ const DB = process.env.SMART_MEMORY_PATH || path.join(DATA, 'records.jsonl');
 const HANDOFF = path.join(DATA, 'handoff.json');
 const COMPACT_STATE = path.join(DATA, 'compact-state.json');
 const SWITCH_STATE = path.join(DATA, 'model-switch-state.json');
+const GUARD_STATE = path.join(DATA, 'cache-guard-state.json');
 // Pinned policy lives in the harness repo's own store and follows every project.
 const HARNESS_DB = path.join(HARNESS_ROOT, '.claude', 'memory', 'records.jsonl');
 
@@ -221,15 +222,63 @@ function modelSwitchNote(activity, input, scoreMod) {
   const state = readJsonFile(SWITCH_STATE);
   if (state && state.sessionId === sessionId) return null;
   writeJsonFile(SWITCH_STATE, { sessionId, at: Date.now() });
+  // A switch re-caches the whole context on the new model once. It repays itself in
+  // about 13 requests at any size, but costs least right after a compaction.
+  const costMod = req('model-router/cost.cjs');
+  const sonnet = costMod && costMod.rate('claude-sonnet-5');
+  const rewrite = sonnet && activity.tokens >= 150000
+    ? ` Switching re-caches this ${Math.round(activity.tokens / 1000)}k context once (~$${((activity.tokens * sonnet.in * 2) / 1e6).toFixed(2)}), so it is cheapest right after a /compact.`
+    : '';
   return `[router] The last 6 turns on ${activity.model} were all small work. Tell the user in one sentence that ` +
     '`/model sonnet` (or `/model opusplan`: Opus to plan, Sonnet to build) would handle a stretch like this for ' +
-    'about 60% less, and `/model opus` switches back for hard work.';
+    `about 60% less, and \`/model opus\` switches back for hard work.${rewrite}`;
+}
+
+/**
+ * Holds the first message after the prompt cache expires, once, when re-caching this
+ * session costs clearly more than starting fresh. Writes a handoff first, so /clear
+ * loses nothing. Any failure lets the prompt through.
+ */
+function coldCacheBlock(input, prompt, activity) {
+  const guardMod = req('cache-guard.cjs');
+  const configMod = req('config.cjs');
+  if (!guardMod || !configMod || !activity) return null;
+  try {
+    const sessionId = input.session_id || null;
+    const result = guardMod.adviseColdCache({
+      prompt,
+      tokens: activity.tokens,
+      model: activity.model,
+      lastResponseAt: activity.lastResponseAt,
+      cacheTtl: activity.cacheTtl,
+      sessionId,
+      state: readJsonFile(GUARD_STATE),
+      settings: configMod.load().cacheGuard,
+    });
+    if (!result.block) return null;
+
+    const storeMod = req('memory/store.cjs');
+    const redact = storeMod && storeMod.redactSecrets ? storeMod.redactSecrets : (s) => s;
+    const summary = guardMod.handoffSummary(activity.handoff);
+    if (summary) writeJsonFile(HANDOFF, { at: Date.now(), summary: redact(summary), sessionId });
+    writeJsonFile(GUARD_STATE, result.state);
+    return result.block;
+  } catch {
+    return null;
+  }
 }
 
 function modeRecall() {
   const input = parseInput();
   const prompt = String(input.prompt || '').trim();
   if (!prompt) process.exit(0);
+
+  const activity = sessionActivity(input, prompt);
+  const hold = coldCacheBlock(input, prompt, activity);
+  if (hold) {
+    process.stdout.write(`${JSON.stringify({ decision: 'block', reason: hold })}\n`);
+    process.exit(0);
+  }
 
   writeJsonFile(STATE, {
     prompt: prompt.slice(0, 500),
@@ -243,7 +292,6 @@ function modeRecall() {
   const out = [];
 
   const neighbors = findNeighbors(store, prompt, scoreMod);
-  const activity = sessionActivity(input, prompt);
 
   if (router) {
     try {
@@ -267,7 +315,10 @@ function modeRecall() {
   if (store) {
     try {
       const rec = store.recall(prompt, { budgetTokens: RECALL_BUDGET, limit: 3 });
-      const notes = rec.records.filter((r) => r.kind !== 'outcome');
+      // Core records are already in context from SessionStart; repeating them costs
+      // tokens on every prompt and tells Claude nothing new.
+      const core = new Set(coreTexts());
+      const notes = rec.records.filter((r) => r.kind !== 'outcome' && !core.has(r.text));
       if (notes.length) {
         out.push(`[memory] ${notes.map((r) => r.text).join(' | ')}`);
       }

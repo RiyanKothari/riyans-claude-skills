@@ -205,6 +205,11 @@ function recentActivity(filePath, opts = {}) {
   const turns = [];
   let cur = null;
   let lastAgentAt = 0;
+  // When the prompt cache was last refreshed and how long it lives: a request after
+  // that re-caches the whole context at the cache-write rate.
+  let lastResponseAt = 0;
+  let cacheTtl = null;
+  let lastText = '';
 
   for (const line of lines) {
     let o;
@@ -223,10 +228,17 @@ function recentActivity(filePath, opts = {}) {
       continue;
     }
     if (!o || o.type !== 'assistant' || !o.message) continue;
-    if (o.message.usage) usage = { tokens: usageTokens(o.message.usage), model: o.message.model || null };
+    if (o.message.usage) {
+      usage = { tokens: usageTokens(o.message.usage), model: o.message.model || null };
+      lastResponseAt = Date.parse(o.timestamp) || lastResponseAt;
+      const cc = o.message.usage.cache_creation;
+      if (cc && cc.ephemeral_1h_input_tokens > 0) cacheTtl = '1h';
+      else if (cc && cc.ephemeral_5m_input_tokens > 0) cacheTtl = '5m';
+    }
     if (!cur || !Array.isArray(o.message.content)) continue;
 
     for (const block of o.message.content) {
+      if (block && block.type === 'text' && block.text && block.text.trim()) lastText = block.text.trim();
       if (!block || block.type !== 'tool_use') continue;
       if (block.name === 'Agent' || block.name === 'Task') lastAgentAt = Date.parse(o.timestamp) || lastAgentAt;
       const kind = classifyTool(block.name || '');
@@ -258,7 +270,20 @@ function recentActivity(filePath, opts = {}) {
   const recent = completed.slice(-8).map((t) => ({
     edits: t.edits, commands: t.commands, reads: t.reads, distinctFiles: t.files.size,
   }));
-  return { ...usage, phase, recent, lastAgentAt };
+  return {
+    ...usage,
+    phase,
+    recent,
+    lastAgentAt,
+    lastResponseAt,
+    cacheTtl,
+    // Enough for a fresh session to pick this one up.
+    handoff: {
+      prompts: completed.slice(-3).map((t) => t.prompt),
+      files: [...new Set(completed.slice(-5).flatMap((t) => [...t.files]))],
+      lastText,
+    },
+  };
 }
 
 module.exports = {

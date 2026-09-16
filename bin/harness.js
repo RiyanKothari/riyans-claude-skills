@@ -311,6 +311,7 @@ const TOOLS = {
   lint: 'tools/skill-lint/cli.cjs',
   config: 'tools/config.cjs',
   loop: 'tools/loop.cjs',
+  spend: 'tools/outcome/spend.cjs',
 };
 
 function runTool(name, rest) {
@@ -326,7 +327,7 @@ function runTool(name, rest) {
 
 function usage() {
   console.log('Usage: rcskills <install|doctor|status|uninstall> [--profile P] [--global]');
-  console.log('       rcskills <route|mem|scorecard|audit|backtest|seed|lint|config|loop> [args]');
+  console.log('       rcskills <route|mem|scorecard|audit|backtest|seed|lint|config|loop|spend> [args]');
   console.log('\nProfiles:');
   for (const [k, v] of Object.entries(PROFILES)) {
     console.log(`  ${k.padEnd(9)} ${v.desc}`);

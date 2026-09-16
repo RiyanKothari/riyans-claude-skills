@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { load, set, DEFAULTS } = require('./config.cjs');
+const { load, set, describe, DEFAULTS } = require('./config.cjs');
 
 delete process.env.TOKEN_HARNESS_COMPACT;
 delete process.env.TOKEN_HARNESS_COMPACT_BUDGET;
@@ -136,5 +136,24 @@ test('rcskills config sets and shows the setting from any directory', () => {
   const bad = run(['compact', 'sometimes']);
   assert.strictEqual(bad.status, 1);
   assert.match(bad.stderr, /usage: rcskills config/);
+  c.clean();
+});
+
+test('the cache guard is on at $0.50 by default, and settable from file, CLI and env', () => {
+  delete process.env.TOKEN_HARNESS_CACHE_GUARD;
+  const c = withConfig();
+  assert.deepStrictEqual(load({}).cacheGuard, { enabled: true, budgetUsd: 0.5 });
+
+  assert.deepStrictEqual(set('cache-guard', '$1.25'), { enabled: true, budgetUsd: 1.25 });
+  set('compact', 'off');
+  assert.deepStrictEqual(load({}).cacheGuard, { enabled: true, budgetUsd: 1.25 }, 'other settings keep it');
+  set('cache-guard', 'off');
+  assert.strictEqual(load({}).cacheGuard.enabled, false);
+  assert.strictEqual(load({}).compact.enabled, false);
+
+  assert.strictEqual(load({ TOKEN_HARNESS_CACHE_GUARD: 'on' }).cacheGuard.enabled, true);
+  assert.strictEqual(load({ TOKEN_HARNESS_CACHE_GUARD: '2' }).cacheGuard.budgetUsd, 2);
+  assert.throws(() => set('cache-guard', 'sometimes'), /on, off or a dollar amount/);
+  assert.match(describe(load({})), /cache guard:\s+off/);
   c.clean();
 });

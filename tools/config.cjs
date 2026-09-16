@@ -21,6 +21,12 @@ const DEFAULTS = {
     qualityShare: 0.4,
     remindEvery: 100000,
   },
+  cacheGuard: {
+    enabled: true,
+    // Hold a message back once when re-caching an expired session costs this much
+    // more than starting a fresh one.
+    budgetUsd: 0.5,
+  },
 };
 
 function configPath() {
@@ -96,7 +102,34 @@ function load(env = process.env) {
   const remind = positive(env.TOKEN_HARNESS_COMPACT_REMIND);
   if (remind) compact.remindEvery = remind;
 
-  return { compact };
+  const cacheGuard = sanitizeGuard({ ...DEFAULTS.cacheGuard, ...(file.cacheGuard || {}) });
+  const guard = String(env.TOKEN_HARNESS_CACHE_GUARD || '').trim();
+  if (guard) applyGuard(cacheGuard, guard);
+
+  return { compact, cacheGuard };
+}
+
+function sanitizeGuard(raw) {
+  const r = raw || {};
+  return {
+    enabled: r.enabled !== false,
+    budgetUsd: positiveFloat(r.budgetUsd) || DEFAULTS.cacheGuard.budgetUsd,
+  };
+}
+
+/** on | off | <usd>. Returns false when the value is not one of those. */
+function applyGuard(guard, value) {
+  const v = String(value ?? '').trim().toLowerCase().replace(/^\$/, '');
+  const usd = positiveFloat(v);
+  if (v === 'off' || v === 'false' || v === '0') guard.enabled = false;
+  else if (v === 'on' || v === 'true') guard.enabled = true;
+  else if (usd) {
+    guard.enabled = true;
+    guard.budgetUsd = usd;
+  } else {
+    return false;
+  }
+  return true;
 }
 
 /** Persist one setting. An unreadable config file is not an empty one, so it is never overwritten. */
@@ -107,6 +140,16 @@ function set(key, value) {
 
   const current = read.value || {};
   const compact = sanitize({ ...DEFAULTS.compact, ...(current.compact || {}) });
+
+  if (key === 'cache-guard') {
+    const cacheGuard = sanitizeGuard({ ...DEFAULTS.cacheGuard, ...(current.cacheGuard || {}) });
+    if (!applyGuard(cacheGuard, value)) {
+      throw new Error(`cache-guard expects on, off or a dollar amount, got "${value}"`);
+    }
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, `${JSON.stringify({ ...current, cacheGuard }, null, 2)}\n`, 'utf8');
+    return cacheGuard;
+  }
 
   if (key === 'compact') {
     if (!applyMode(compact, value)) {
@@ -140,9 +183,13 @@ function describe(settings) {
     lines.push(`                    ${Math.round(c.qualityShare * 100)}% of the model's window; sooner at a natural break, later mid-task`);
   }
   lines.push(`  then every:       ${k(c.remindEvery)} tokens of further growth`);
+  const g = settings.cacheGuard || DEFAULTS.cacheGuard;
+  lines.push(`cache guard:        ${g.enabled ? 'on' : 'off'}`);
+  lines.push(`  holds a message:  once, when an expired cache costs $${g.budgetUsd}+ more to re-cache than a fresh session`);
   lines.push(`config file:        ${configPath()}`);
   lines.push('env overrides:      TOKEN_HARNESS_COMPACT=on|off|dynamic|<tokens>, '
-    + 'TOKEN_HARNESS_COMPACT_BUDGET=<usd>, TOKEN_HARNESS_COMPACT_REMIND=<tokens>');
+    + 'TOKEN_HARNESS_COMPACT_BUDGET=<usd>, TOKEN_HARNESS_COMPACT_REMIND=<tokens>, '
+    + 'TOKEN_HARNESS_CACHE_GUARD=on|off|<usd>');
   return lines.join('\n');
 }
 
@@ -153,7 +200,7 @@ if (require.main === module) {
     console.log(describe(load()));
   } catch (e) {
     console.error(e.message);
-    console.error('usage: rcskills config [compact <on|off|dynamic|tokens>] [compact-budget <usd>] [compact-remind <tokens>]');
+    console.error('usage: rcskills config [compact <on|off|dynamic|tokens>] [compact-budget <usd>] [compact-remind <tokens>] [cache-guard <on|off|usd>]');
     process.exitCode = 1;
   }
 }

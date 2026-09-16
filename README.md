@@ -68,6 +68,7 @@ rcskills route "your task"          # which model can do this?
 rcskills mem recall "question"      # what do we already know?
 rcskills audit                      # what is eating my context?
 rcskills backtest                   # is the router actually accurate?
+rcskills spend                      # where did the money go? (--project <dir>, --json)
 rcskills scorecard trend            # am I improving or repeating mistakes?
 rcskills loop start 'task' --completion-promise 'DONE' --max-iterations 10
 ```
@@ -108,11 +109,46 @@ rcskills config compact dynamic         # back to per-session
 rcskills config compact off             # never prompt
 ```
 
+### Cache guard
+
+A message sent after the prompt cache expires (an hour idle, by default) makes the
+model re-read the whole session at the cache-write rate before doing anything: 677k
+tokens on Opus 5 is ~$6.77 for one message. The guard holds the first such message
+once and shows the price. `/clear` starts fresh for ~$0.56 and the new session is
+given a summary of the old one (recent asks, files edited, last reply, secrets
+redacted). Sending the same message again goes through. It stays silent when the
+cache is warm, for slash commands, and when a fresh session would save less than
+the budget.
+
+```bash
+rcskills config cache-guard 1.00        # hold only when /clear saves $1+
+rcskills config cache-guard off         # never hold a message
+```
+
 Settings live in `~/.claude/token-harness/config.json` and apply to every project.
 To change one project only, set `TOKEN_HARNESS_COMPACT` (`on`, `off`, `dynamic`
-or a token count) in the `env` block of that project's `.claude/settings.json`.
+or a token count) or `TOKEN_HARNESS_CACHE_GUARD` (`on`, `off` or dollars) in the
+`env` block of that project's `.claude/settings.json`.
 
 ## What the numbers actually are
+
+`rcskills spend` on 2,821 real requests ($854 at list price) across 10 sessions:
+
+```
+cache reads    62.4%   re-reading context: compaction prompts target this
+cache writes   27.4%
+output         10.2%
+
+cache rewrites of already-cached context:
+  39  $129.39  15.1%  expired while idle   <- the cache guard holds 32 of these;
+                                             /clear on each saves $107.60 (12.6%)
+   7   $38.72   4.5%  prefix changed for an unknown reason
+   2    $0.96   0.1%  model switched (Claude Code already asks first)
+   3    $1.36   0.2%  compaction
+```
+
+Only 5 shell outputs ever exceeded 12k characters, so capping command output would
+save almost nothing. The measurement said so before anything was built.
 
 Backtested against 189 real transcript turns, 143 of which edited files or ran
 commands — the only turns where handing work to a subagent is possible:
@@ -160,7 +196,7 @@ prices each prompt against the session's real context and stays silent otherwise
 ## Development
 
 ```bash
-npm run verify        # typecheck + skill lint + 283 tests
+npm run verify        # typecheck + skill lint + 308 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```
