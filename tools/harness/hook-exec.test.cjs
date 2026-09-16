@@ -160,3 +160,31 @@ test('pinned policy in the harness store reaches every project', () => {
 
   for (const d of [harness, project, home]) fs.rmSync(d, { recursive: true, force: true });
 });
+
+test('the Stop hook records the turn only when learning is on, in the same process', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'learn-hook-'));
+  const tp = path.join(dir, 't.jsonl');
+  const db = path.join(dir, 'records.jsonl');
+  fs.writeFileSync(tp, [
+    { type: 'user', promptSource: 'sdk', origin: { kind: 'human' }, message: { content: 'rename foo to bar in src/a.js' } },
+    { type: 'assistant', message: { model: 'claude-opus-5', content: [{ type: 'tool_use', name: 'Edit', input: { file_path: '/r/src/a.js' } }] } },
+    { type: 'assistant', message: { model: 'claude-opus-5', content: [{ type: 'text', text: 'Done.' }] } },
+  ].map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const stop = (args, env = {}) => spawnSync(process.execPath, [path.join(__dirname, '..', '..', '.claude', 'helpers', 'learning-hook.cjs'), 'loop', ...args], {
+    cwd: dir,
+    encoding: 'utf8',
+    input: JSON.stringify({ transcript_path: tp, session_id: 'learn', stop_hook_active: false }),
+    env: { ...process.env, CLAUDE_PROJECT_DIR: dir, SMART_MEMORY_PATH: db, TOKEN_HARNESS_CONFIG: path.join(dir, 'c.json'), TOKEN_HARNESS_LEARNING: '', ...env },
+  });
+  const outcomes = () => (fs.existsSync(db) ? fs.readFileSync(db, 'utf8').split('"kind":"outcome"').length - 1 : 0);
+
+  assert.strictEqual(stop([]).stdout, '');
+  assert.strictEqual(outcomes(), 0, 'standard: nothing recorded');
+  stop(['--learn']);
+  assert.strictEqual(outcomes(), 1, 'strict: recorded by the loop hook itself');
+  // The store merges an identical record, so the config path is checked on a fresh store.
+  fs.rmSync(db);
+  stop([], { TOKEN_HARNESS_LEARNING: 'on' });
+  assert.strictEqual(outcomes(), 1, 'plugin: rcskills config learning on');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

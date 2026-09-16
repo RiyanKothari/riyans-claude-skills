@@ -16,7 +16,9 @@ const MARKER = 'riyans-claude-skills';
 const PROFILES = {
   minimal: { hooks: [], desc: 'skill only, no hooks, zero per-turn overhead' },
   standard: { hooks: ['core', 'recall', 'loop', 'switch'], desc: 'fixed core at session start + per-prompt recall + ralph loop + cache notices' },
-  strict: { hooks: ['core', 'recall', 'loop', 'switch', 'finalize'], desc: 'standard + outcome capture (the learning loop)' },
+  // Outcome capture rides the Stop hook that already runs, instead of a second
+  // process at every stop (650ms measured per spawn).
+  strict: { hooks: ['core', 'recall', 'loop', 'switch'], learn: true, desc: 'standard + outcome capture in the same Stop hook (the learning loop)' },
 };
 
 // Timeouts are seconds: Claude Code multiplies them by 1000. Versions before 1.1.0
@@ -25,7 +27,6 @@ const HOOK_SPEC = {
   core: { event: 'SessionStart', timeout: 6 },
   recall: { event: 'UserPromptSubmit', timeout: 8 },
   loop: { event: 'Stop', timeout: 6 },
-  finalize: { event: 'Stop', timeout: 6 },
   // Fires only when the model changes, so it adds nothing per turn.
   switch: { event: 'PreModelSwitch', timeout: 6 },
 };
@@ -89,7 +90,8 @@ function hookCommand(mode, opts = {}) {
   const script = path.join(REPO, '.claude', 'helpers', 'learning-hook.cjs').replace(/\\/g, '/');
   // --global lets the hook stand down inside this repo, whose project settings
   // already run it, instead of firing twice per event.
-  return `node "${script}" ${mode}${opts.global ? ' --global' : ''}`;
+  const learn = opts.learn && mode === 'loop' ? ' --learn' : '';
+  return `node "${script}" ${mode}${opts.global ? ' --global' : ''}${learn}`;
 }
 
 function backupSettings(settingsFile) {
@@ -103,6 +105,15 @@ function backupSettings(settingsFile) {
 function addHooks(settings, modes, opts = {}) {
   settings.hooks = settings.hooks || {};
   const added = [];
+
+  // Our groups for modes this profile no longer runs (a 1.0 strict install's separate
+  // finalize hook, or strict -> standard) are removed, or they would keep spawning.
+  for (const event of Object.keys(settings.hooks)) {
+    const groups = settings.hooks[event];
+    if (!Array.isArray(groups)) continue;
+    settings.hooks[event] = groups.filter((g) => !g || !g[MARKER] || modes.includes(g[MARKER]));
+    if (!settings.hooks[event].length) delete settings.hooks[event];
+  }
 
   for (const mode of modes) {
     const spec = HOOK_SPEC[mode];
@@ -190,7 +201,7 @@ function install(opts) {
 
   const settings = read.value;
   const backup = backupSettings(settingsFile);
-  const added = addHooks(settings, profile.hooks, { global: opts.global });
+  const added = addHooks(settings, profile.hooks, { global: opts.global, learn: profile.learn });
   writeJson(settingsFile, settings);
 
   writeJson(statePath(dir), {

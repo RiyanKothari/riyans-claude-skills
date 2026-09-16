@@ -27,7 +27,7 @@ overhead choice, not a preference. Hook timeouts are seconds; versions before
 |---|---|---|---|
 | `minimal` | none | zero | You want the skill and CLI tools only |
 | `standard` | core, recall, loop, switch | ~2 spawns/turn | Default. Memory, cache advice and ralph loops |
-| `strict` | + finalize | ~3 spawns/turn | You want the router to learn from outcomes |
+| `strict` | same, loop runs with --learn | ~2 spawns/turn | You want the router to learn from outcomes |
 
 There is deliberately **no PostToolUse hook** in any profile. It would spawn one
 process per tool call, and real turns average 12.6 tool calls. The `finalize`

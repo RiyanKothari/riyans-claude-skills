@@ -109,7 +109,7 @@ measured, depending on the machine), so the settings install lets you choose.
 |---|---|---|---|
 | `minimal` | none | zero | You want the skills and CLI only |
 | `standard` | core, recall, loop, switch | ~2 spawns | Default. Memory, cache notices and `/ralph-loop` work automatically |
-| `strict` | + finalize | ~3 spawns | You want the router to learn from outcomes |
+| `strict` | same hooks; loop also records outcomes | ~2 spawns | You want the router to learn from outcomes |
 
 The `loop` hook runs at every stop and costs no tokens: it feeds a loop's prompt
 back only when this session started one, and otherwise may show you a `[cache]`
@@ -204,6 +204,7 @@ first, because it changes nothing but still re-caches everything.
 rcskills config cache-guard 1.00        # only when /clear would save $1+
 rcskills config cache-guard block       # also hold the first message after expiry, once
 rcskills config cache-guard off
+rcskills config learning on             # record outcomes so the router learns (strict, for plugin installs)
 ```
 
 Settings live in `~/.claude/token-harness/config.json` and apply to every project.
@@ -286,7 +287,7 @@ prices each prompt against the session's real context and stays silent otherwise
 
 ```bash
 npm install --include=dev   # .npmrc omits dev deps so plugin installs download nothing
-npm run verify        # typecheck + skill lint + 328 tests
+npm run verify        # typecheck + skill lint + 332 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```

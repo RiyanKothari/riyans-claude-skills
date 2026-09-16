@@ -147,7 +147,7 @@ test('the cache guard is on at $0.50 by default, and settable from file, CLI and
   assert.deepStrictEqual(set('cache-guard', '$1.25'), { enabled: true, budgetUsd: 1.25, mode: 'notify' });
   set('compact', 'off');
   assert.deepStrictEqual(load({}).cacheGuard, { enabled: true, budgetUsd: 1.25, mode: 'notify' }, 'other settings keep it');
-  assert.strictEqual(set('cache-guard', 'block').mode, 'block');
+  assert.strictEqual(/** @type {{mode: string}} */ (set('cache-guard', 'block')).mode, 'block');
   assert.strictEqual(load({}).cacheGuard.budgetUsd, 1.25, 'switching mode keeps the budget');
   set('cache-guard', 'off');
   assert.strictEqual(load({}).cacheGuard.enabled, false);
@@ -159,4 +159,24 @@ test('the cache guard is on at $0.50 by default, and settable from file, CLI and
   assert.throws(() => set('cache-guard', 'sometimes'), /on, off, notify, block or a dollar amount/);
   assert.match(describe(load({})), /cache guard:\s+off/);
   c.clean();
+});
+
+test('outcome learning is off by default, and set or env turns it on', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-learn-'));
+  const env = { TOKEN_HARNESS_CONFIG: path.join(dir, 'config.json') };
+  const saved = process.env.TOKEN_HARNESS_CONFIG;
+  process.env.TOKEN_HARNESS_CONFIG = env.TOKEN_HARNESS_CONFIG;
+  try {
+    assert.strictEqual(load(env).learning, false);
+    assert.strictEqual(load({ ...env, TOKEN_HARNESS_LEARNING: 'on' }).learning, true);
+    set('learning', 'on');
+    assert.strictEqual(load(env).learning, true);
+    assert.strictEqual(load({ ...env, TOKEN_HARNESS_LEARNING: 'off' }).learning, false, 'env wins');
+    assert.throws(() => set('learning', 'maybe'), /on or off/);
+    assert.match(describe(load(env)), /outcome learning:   on/);
+  } finally {
+    if (saved === undefined) delete process.env.TOKEN_HARNESS_CONFIG;
+    else process.env.TOKEN_HARNESS_CONFIG = saved;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

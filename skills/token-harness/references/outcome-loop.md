@@ -34,7 +34,7 @@ where `effort = edits + commands`.
 
 ```
 recall   (UserPromptSubmit)  start turn, surface memory + routing
-finalize (Stop)              derive the turn from the transcript, store it
+loop     (Stop, --learn)     derive the turn from the transcript, store it
 ```
 
 There was a third on PostToolUse counting tool calls live. Measurement killed it:
@@ -43,11 +43,14 @@ noise, and real turns average **12.6 tool calls**.
 
 ```
 old: 1 recall + 12.6 observe + 1 finalize = 14.6 spawns/turn
-new: 1 recall + 1 finalize               =  2   spawns/turn
+new: 1 recall + 1 stop                   =  2   spawns/turn
 ```
 
 The transcript already held the same facts. **Never put bookkeeping on
 PostToolUse** — it multiplies by tool count.
+
+Outcome capture later moved into the loop hook, which runs at Stop anyway: a
+separate finalize hook had made strict three spawns per turn (650ms each measured).
 
 ## Backtesting
 

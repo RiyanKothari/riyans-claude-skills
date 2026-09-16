@@ -28,6 +28,8 @@ const DEFAULTS = {
     // notify: tell the user after a reply. block: also hold the first message after expiry.
     mode: 'notify',
   },
+  // Record each turn's outcome at Stop so the router learns (the strict profile).
+  learning: false,
 };
 
 function configPath() {
@@ -107,7 +109,19 @@ function load(env = process.env) {
   const guard = String(env.TOKEN_HARNESS_CACHE_GUARD || '').trim();
   if (guard) applyGuard(cacheGuard, guard);
 
-  return { compact, cacheGuard };
+  const fileLearning = typeof file.learning === 'boolean' ? file.learning : DEFAULTS.learning;
+  const envLearning = onOff(env.TOKEN_HARNESS_LEARNING);
+  const learning = envLearning === null ? fileLearning : envLearning;
+
+  return { compact, cacheGuard, learning };
+}
+
+/** on/off words to a boolean; anything else is null. */
+function onOff(value) {
+  const v = String(value ?? '').trim().toLowerCase();
+  if (['on', 'true', '1', 'yes'].includes(v)) return true;
+  if (['off', 'false', '0', 'no'].includes(v)) return false;
+  return null;
 }
 
 function sanitizeGuard(raw) {
@@ -158,6 +172,14 @@ function set(key, value) {
     return cacheGuard;
   }
 
+  if (key === 'learning') {
+    const learning = onOff(value);
+    if (learning === null) throw new Error(`learning expects on or off, got "${value}"`);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, `${JSON.stringify({ ...current, learning }, null, 2)}\n`, 'utf8');
+    return learning;
+  }
+
   if (key === 'compact') {
     if (!applyMode(compact, value)) {
       throw new Error(`compact expects on, off, dynamic or a token count, got "${value}"`);
@@ -196,10 +218,11 @@ function describe(settings) {
   lines.push(`  then:             ${g.mode === 'block'
     ? 'holds the first message after the cache expires, once'
     : 'tells you after a reply until when the cache is cheap; never holds a message'}`);
+  lines.push(`outcome learning:   ${settings.learning ? 'on (each turn recorded at Stop, no extra process)' : 'off'}`);
   lines.push(`config file:        ${configPath()}`);
   lines.push('env overrides:      TOKEN_HARNESS_COMPACT=on|off|dynamic|<tokens>, '
     + 'TOKEN_HARNESS_COMPACT_BUDGET=<usd>, TOKEN_HARNESS_COMPACT_REMIND=<tokens>, '
-    + 'TOKEN_HARNESS_CACHE_GUARD=on|off|notify|block|<usd>');
+    + 'TOKEN_HARNESS_CACHE_GUARD=on|off|notify|block|<usd>, TOKEN_HARNESS_LEARNING=on|off');
   return lines.join('\n');
 }
 
@@ -210,7 +233,7 @@ if (require.main === module) {
     console.log(describe(load()));
   } catch (e) {
     console.error(e.message);
-    console.error('usage: rcskills config [compact <on|off|dynamic|tokens>] [compact-budget <usd>] [compact-remind <tokens>] [cache-guard <on|off|notify|block|usd>]');
+    console.error('usage: rcskills config [compact <on|off|dynamic|tokens>] [compact-budget <usd>] [compact-remind <tokens>] [cache-guard <on|off|notify|block|usd>] [learning <on|off>]');
     process.exitCode = 1;
   }
 }

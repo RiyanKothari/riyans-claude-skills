@@ -28,6 +28,8 @@ const GLOBAL = process.argv.includes('--global');
 // Installed as a Claude Code plugin: subagents are namespaced by the plugin name.
 const PLUGIN = process.argv.includes('--plugin');
 const AGENT_PREFIX = PLUGIN ? 'rcskills:' : '';
+// strict profile: record each turn's outcome from the Stop hook that already runs.
+const LEARN = process.argv.includes('--learn');
 
 function samePath(a, b) {
   const norm = (p) => path.resolve(p);
@@ -519,23 +521,23 @@ function modeCore() {
  * counting live: a PostToolUse hook spawned one node process per tool call
  * (~166ms measured), while the transcript already holds the same facts.
  */
-function modeFinalize() {
-  const input = parseInput();
+/** Stores what the finished turn actually did, so the router learns from outcomes. */
+function recordOutcome(input) {
   const scoreMod = req('outcome/score.cjs');
   const tsMod = req('outcome/transcript.cjs');
   const store = openStore();
-  if (!scoreMod || !tsMod || !store) process.exit(0);
+  if (!scoreMod || !tsMod || !store) return;
 
   const tPath = input.transcript_path || input.transcriptPath;
-  if (!tPath) process.exit(0);
+  if (!tPath) return;
 
   let turn;
   try {
     turn = tsMod.lastTurn(tPath);
   } catch {
-    process.exit(0);
+    return;
   }
-  if (!turn || !turn.prompt) process.exit(0);
+  if (!turn || !turn.prompt) return;
 
   const obs = {
     edits: turn.edits,
@@ -545,7 +547,7 @@ function modeFinalize() {
   };
 
   // A turn that did nothing observable teaches nothing worth storing.
-  if (obs.edits + obs.commands + obs.reads === 0) process.exit(0);
+  if (obs.edits + obs.commands + obs.reads === 0) return;
 
   try {
     const tier = scoreMod.actualTier(obs);
@@ -568,6 +570,21 @@ function modeFinalize() {
   }
 
   try { fs.unlinkSync(STATE); } catch {}
+}
+
+function learningOn() {
+  if (LEARN) return true;
+  try {
+    const configMod = req('config.cjs');
+    return Boolean(configMod && configMod.load().learning);
+  } catch {
+    return false;
+  }
+}
+
+/** Kept for settings written by 1.0 strict installs; re-installing folds it into loop. */
+function modeFinalize() {
+  recordOutcome(parseInput());
   process.exit(0);
 }
 
@@ -579,6 +596,7 @@ function modeFinalize() {
  */
 function modeLoop() {
   const input = parseInput();
+  if (learningOn()) recordOutcome(input);
   const loop = req('loop.cjs');
   let decision = null;
   try {

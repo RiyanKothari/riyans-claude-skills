@@ -27,13 +27,11 @@ function isHumanPrompt(o) {
 
 function parseTranscript(filePath, opts = {}) {
   if (!fs.existsSync(filePath)) return [];
-  let lines = fs.readFileSync(filePath, 'utf8').split('\n');
-
-  // Reading only the tail is enough to recover the most recent turns, and
-  // keeps Stop-phase cost flat as a long session's transcript grows.
-  if (opts.tailLines && lines.length > opts.tailLines) {
-    lines = lines.slice(-opts.tailLines);
-  }
+  // Reading only the tail is enough to recover the most recent turns. This used to
+  // read the whole file and then slice: ~350ms per Stop on a 44MB transcript.
+  const lines = opts.tailLines
+    ? tailLinesOf(filePath, opts.tailLines)
+    : fs.readFileSync(filePath, 'utf8').split('\n');
 
   const turns = [];
   let current = null;
@@ -151,6 +149,15 @@ function lastContextUsage(filePath, tailBytes = 512000) {
     return { tokens: usageTokens(u), model: o.message.model || null };
   }
   return null;
+}
+
+/** The last n lines, read from the end in growing chunks rather than whole. */
+function tailLinesOf(filePath, n) {
+  const size = fs.statSync(filePath).size;
+  for (let bytes = 1 << 22; ; bytes *= 4) {
+    const lines = readTailLines(filePath, bytes) || [];
+    if (bytes >= size || lines.length > n) return lines.slice(-n);
+  }
 }
 
 function readTailLines(filePath, tailBytes) {

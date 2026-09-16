@@ -152,3 +152,31 @@ test('backtest counts a cheap prediction on heavy work as a false delegate', () 
   ]);
   assert.strictEqual(r.falseDelegate, 1);
 });
+
+test('a long transcript is read from its tail, never whole', () => {
+  const p = path.join(os.tmpdir(), `tail-${Math.random()}.jsonl`);
+  const pad = { type: 'assistant', message: { model: 'claude-opus-5', content: [{ type: 'text', text: 'x'.repeat(4000) }] } };
+  // ~6MB, past the first 4MB chunk, so the chunk has to grow.
+  const lines = Array.from({ length: 1500 }, () => JSON.stringify(pad));
+  lines.push(JSON.stringify({ type: 'user', promptSource: 'sdk', origin: { kind: 'human' }, message: { content: 'the last ask' } }));
+  lines.push(JSON.stringify({ type: 'assistant', message: { model: 'claude-opus-5', content: [{ type: 'tool_use', name: 'Edit', input: { file_path: '/r/a.js' } }] } }));
+  fs.writeFileSync(p, `${lines.join('\n')}\n`);
+
+  const whole = parseTranscript(p);
+  const tail = parseTranscript(p, { tailLines: 1000 });
+  const original = fs.readFileSync;
+  /** @type {any} */ (fs).readFileSync = (/** @type {any} */ f, /** @type {any[]} */ ...rest) => {
+    if (String(f) === p) throw new Error('read the whole transcript');
+    return /** @type {any} */ (original)(f, ...rest);
+  };
+  try {
+    const turn = lastTurn(p);
+    assert.ok(turn);
+    assert.strictEqual(turn.prompt, 'the last ask');
+    assert.strictEqual(turn.edits, whole[whole.length - 1].edits);
+    assert.strictEqual(tail.length, 1, 'only the tail was parsed');
+  } finally {
+    fs.readFileSync = original;
+    fs.unlinkSync(p);
+  }
+});

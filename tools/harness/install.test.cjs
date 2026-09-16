@@ -23,9 +23,25 @@ test('every profile maps to known hook modes', () => {
   }
 });
 
-test('profiles escalate: minimal < standard < strict', () => {
+test('profiles escalate: minimal < standard < strict, without strict adding a process', () => {
   assert.ok(PROFILES.minimal.hooks.length < PROFILES.standard.hooks.length);
-  assert.ok(PROFILES.standard.hooks.length < PROFILES.strict.hooks.length);
+  assert.deepStrictEqual(PROFILES.strict.hooks, PROFILES.standard.hooks);
+  assert.ok(PROFILES.strict.learn && !PROFILES.standard.learn);
+});
+
+test('strict writes a loop hook that also learns, and removes a 1.0 finalize hook', () => {
+  const settings = { hooks: { Stop: [
+    { [MARKER]: 'loop', hooks: [{ type: 'command', command: 'node "/old/learning-hook.cjs" loop' }] },
+    { [MARKER]: 'finalize', hooks: [{ type: 'command', command: 'node "/old/learning-hook.cjs" finalize' }] },
+    { hooks: [{ type: 'command', command: 'my-stop-hook' }] },
+  ] } };
+  addHooks(settings, PROFILES.strict.hooks, { learn: true });
+  const stop = settings.hooks.Stop || [];
+  assert.strictEqual(stop.length, 2, 'one harness spawn at Stop, and the user hook kept');
+  assert.match(String(stop.find((g) => g[MARKER] === 'loop')?.hooks[0].command), / loop --learn$/);
+  assert.ok(stop.some((g) => g.hooks[0].command === 'my-stop-hook'));
+  addHooks(settings, PROFILES.standard.hooks);
+  assert.doesNotMatch(JSON.stringify(settings), /--learn/, 'strict -> standard stops learning');
 });
 
 test('minimal installs no hooks at all', () => {
@@ -81,17 +97,15 @@ test('emptied hook events are cleaned up rather than left as dead keys', () => {
   assert.strictEqual(settings.hooks.SessionStart, undefined);
 });
 
-test('only Stop is shared, and only by loop and finalize', () => {
-  // Each hook is a node spawn per event. Stop carries two on purpose: standard
-  // needs the loop without finalize's outcome capture. Any other overlap is an
-  // accidental double spawn.
+test('no event runs two harness hooks', () => {
+  // Each hook is a node spawn per event (650ms measured). Outcome capture used to
+  // add a second Stop spawn; it now rides the loop hook.
   const byEvent = {};
   for (const [mode, spec] of Object.entries(HOOK_SPEC)) {
     (byEvent[spec.event] = byEvent[spec.event] || []).push(mode);
   }
   for (const [event, modes] of Object.entries(byEvent)) {
-    if (event === 'Stop') assert.deepStrictEqual(modes.sort(), ['finalize', 'loop']);
-    else assert.strictEqual(modes.length, 1, `${event} is shared by ${modes.join(', ')}`);
+    assert.strictEqual(modes.length, 1, `${event} is shared by ${modes.join(', ')}`);
   }
 });
 
