@@ -7,7 +7,7 @@ not the number — it is that **four of the seven cannot be inflated**.
 |---|---:|---|
 | Correctness | 20 | test pass rate |
 | Verification | 18 | suite actually running, plus coverage |
-| Durability | 14 | test and doc files this turn edited |
+| Durability | 14 | share of changed modules a changed test names (6), docs edited (4) |
 | Scope fit | 14 | self-rated |
 | Efficiency | 12 | tool count vs the tier baseline |
 | Honesty | 12 | self-rated |

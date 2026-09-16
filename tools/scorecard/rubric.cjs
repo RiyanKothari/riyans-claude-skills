@@ -26,7 +26,7 @@ const PARAMETERS = [
     key: 'durability',
     label: 'Durability',
     weight: 14,
-    evidence: 'tests or docs added',
+    evidence: 'changed modules pinned by a changed test, and docs',
     asks: 'Will this survive, or is it a one-off that rots?',
   },
   {
@@ -96,7 +96,14 @@ function fromEvidence(ev = {}) {
   }
 
   if (typeof ev.testsAdded === 'number' || ev.docsUpdated !== undefined) {
-    const t = ev.testsAdded ? Math.min(6, ev.testsAdded) : 0;
+    // When code changed, the tests share is the fraction of changed modules a changed
+    // test exercises; test-file volume alone no longer earns it. Docs-only turns keep
+    // the old count.
+    const sources = Number(ev.sourcesChanged) || 0;
+    const untested = Array.isArray(ev.untested) ? Math.min(sources, ev.untested.length) : 0;
+    const t = sources > 0
+      ? (6 * (sources - untested)) / sources
+      : (ev.testsAdded ? Math.min(6, ev.testsAdded) : 0);
     const d = ev.docsUpdated ? 4 : 0;
     out.durability = clamp(t + d);
     out.durabilityBacked = true;

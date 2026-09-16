@@ -287,7 +287,7 @@ prices each prompt against the session's real context and stays silent otherwise
 
 ```bash
 npm install --include=dev   # .npmrc omits dev deps so plugin installs download nothing
-npm run verify        # typecheck + skill lint + 332 tests
+npm run verify        # typecheck + skill lint + 338 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```

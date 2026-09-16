@@ -174,3 +174,14 @@ test('the card renders the weakest link and its question', () => {
   assert.match(card, /Weakest/);
   assert.match(card, /left a gap/);
 });
+
+test('durability rewards pinning each changed module, not touching many test files', () => {
+  const d = (evidence) => fromEvidence(evidence).durability;
+  // One module, its one test, and docs: full marks.
+  assert.strictEqual(d({ testsAdded: 1, docsUpdated: true, sourcesChanged: 1, untested: [] }), 10);
+  // Six test files touched, but half the changed modules have no test: not full marks.
+  assert.strictEqual(d({ testsAdded: 6, docsUpdated: true, sourcesChanged: 4, untested: ['a.cjs', 'b.cjs'] }), 7);
+  assert.strictEqual(d({ testsAdded: 0, docsUpdated: false, sourcesChanged: 3, untested: ['a', 'b', 'c'] }), 0);
+  // Docs-only turns keep the file count.
+  assert.strictEqual(d({ testsAdded: 0, docsUpdated: true, sourcesChanged: 0, untested: [] }), 4);
+});

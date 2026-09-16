@@ -3,7 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const { score, formatCard, PARAMETERS } = require('./rubric.cjs');
 const { projectDataDir } = require('../paths.cjs');
 
@@ -15,15 +15,109 @@ function flag(args, name, fallback) {
   return i === -1 ? fallback : args[i + 1];
 }
 
-/** The project's own test command: coverage if it has one, otherwise plain tests. */
-function pickTestCommand(dir = process.cwd()) {
+function readText(file) {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/** Whether `dir` carries pytest configuration, not merely a Python file. */
+function hasPytestConfig(dir) {
+  if (fs.existsSync(path.join(dir, 'pytest.ini'))) return true;
+  const pyproject = readText(path.join(dir, 'pyproject.toml'));
+  if (pyproject && /^\[tool\.pytest(\.ini_options)?\]/m.test(pyproject)) return true;
+  const setupCfg = readText(path.join(dir, 'setup.cfg'));
+  return Boolean(setupCfg && /^\[tool:pytest\]/m.test(setupCfg));
+}
+
+/** The project's venv interpreter if it has one, otherwise whatever `python` is on PATH. */
+function pythonFor(dir, platform) {
+  const rel = platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
+  for (const venv of ['.venv', 'venv']) {
+    const p = path.join(dir, venv, ...rel);
+    if (fs.existsSync(p)) return p;
+  }
+  return 'python';
+}
+
+/**
+ * The project's own test command: coverage if it has one, otherwise plain tests.
+ *
+ * A Python project scored 10/100 with 38 of 38 pytest tests green, because only
+ * package.json was consulted. pytest config in the project root or one directory
+ * down (a `backend/` beside a frontend) now counts, run from that directory.
+ *
+ * @param {string} [dir]
+ * @param {string} [platform]
+ * @returns {{ runner: 'node', command: string, cwd: string }
+ *   | { runner: 'pytest', file: string, args: string[], cwd: string } | null}
+ */
+function pickTestCommand(dir = process.cwd(), platform = process.platform) {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
     const scripts = pkg.scripts || {};
-    if (scripts.coverage) return 'npm run coverage';
-    if (scripts.test) return 'npm test';
+    if (scripts.coverage) return { runner: 'node', command: 'npm run coverage', cwd: dir };
+    if (scripts.test) return { runner: 'node', command: 'npm test', cwd: dir };
   } catch {
-    // No package.json: nothing to run, so the evidence gates stay closed.
+    // No package.json: fall through to Python.
+  }
+
+  let candidates = [dir];
+  try {
+    const skip = new Set(['node_modules', 'venv']);
+    const subdirs = fs.readdirSync(dir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && !d.name.startsWith('.') && !skip.has(d.name))
+      .map((d) => path.join(dir, d.name))
+      .sort();
+    candidates = candidates.concat(subdirs);
+  } catch {
+    // Unreadable directory: only the root itself is a candidate.
+  }
+  const project = candidates.find(hasPytestConfig);
+  if (project) {
+    return { runner: 'pytest', file: pythonFor(project, platform), args: ['-m', 'pytest'], cwd: project };
+  }
+
+  // Nothing to run, so the evidence gates stay closed.
+  return null;
+}
+
+/** Which way each pytest outcome counts. Skipped, deselected and warnings did not pass or fail. */
+const PYTEST_BUCKET = {
+  passed: 'pass', xfailed: 'pass', xpassed: 'pass',
+  failed: 'fail', error: 'fail', errors: 'fail',
+  skipped: null, deselected: null, warning: null, warnings: null, rerun: null,
+};
+
+/**
+ * Counts from pytest's final summary line, with or without `-q`:
+ * `==== 1 failed, 36 passed in 44.44s ====` or `38 passed, 2 warnings in 31.51s`.
+ *
+ * Collection and fixture errors count as failures. Returns null when there is
+ * no summary line at all: a missing interpreter is not a test result.
+ *
+ * @param {string} out
+ * @returns {{ testsPass: number, testsFail: number, testsTotal: number } | null}
+ */
+function parsePytestSummary(out) {
+  const lines = String(out).replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/).reverse();
+  for (const raw of lines) {
+    const line = raw.replace(/^=+\s*|\s*=+$/g, '').replace(/ in [\d.]+s\b.*$/, '').trim();
+    if (line === 'no tests ran') return { testsPass: 0, testsFail: 0, testsTotal: 0 };
+    if (!line) continue;
+
+    const counts = { pass: 0, fail: 0 };
+    const recognised = line.split(', ').every((part) => {
+      const m = part.match(/^(\d+) ([a-z]+)$/);
+      if (!m || !(m[2] in PYTEST_BUCKET)) return false;
+      const bucket = PYTEST_BUCKET[m[2]];
+      if (bucket) counts[bucket] += Number(m[1]);
+      return true;
+    });
+    if (!recognised) continue;
+    return { testsPass: counts.pass, testsFail: counts.fail, testsTotal: counts.pass + counts.fail };
   }
   return null;
 }
@@ -37,12 +131,33 @@ function pickTestCommand(dir = process.cwd()) {
  */
 function gatherEvidence() {
   const ev = { verifyRan: false };
-  const cmd = pickTestCommand();
-  if (!cmd) return Object.assign(ev, gatherTurnEvidence());
+  const picked = pickTestCommand();
+  if (!picked) return Object.assign(ev, gatherTurnEvidence());
+
+  if (picked.runner === 'pytest') {
+    let out = '';
+    try {
+      // No shell: the interpreter path may contain spaces.
+      out = execFileSync(picked.file, picked.args, {
+        cwd: picked.cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024,
+      });
+    } catch (e) {
+      // pytest exits non-zero on any failure; the summary still says what ran.
+      out = `${e.stdout || ''}${e.stderr || ''}`;
+    }
+    const counts = parsePytestSummary(out);
+    // Only a suite that actually ran tests opens the gates: a missing
+    // interpreter, or "no tests ran", measured nothing.
+    if (counts && counts.testsTotal > 0) {
+      Object.assign(ev, counts);
+      ev.verifyRan = true;
+    }
+    return Object.assign(ev, gatherTurnEvidence());
+  }
 
   let out = '';
   try {
-    out = execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    out = execSync(picked.command, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     ev.verifyRan = true;
   } catch (e) {
     out = `${e.stdout || ''}${e.stderr || ''}`;
@@ -96,7 +211,7 @@ function sessionTranscript(env = process.env, projectsDir) {
  * and how many tools it burned, so no time heuristic is needed.
  *
  * @param {string|null} [transcriptPath]
- * @returns {{testsAdded?: number, docsUpdated?: boolean, toolCount?: number, tier?: string}}
+ * @returns {{testsAdded?: number, docsUpdated?: boolean, sourcesChanged?: number, untested?: string[], toolCount?: number, tier?: string}}
  */
 function gatherTurnEvidence(transcriptPath, cwd = process.cwd()) {
   const p = transcriptPath || sessionTranscript();
@@ -113,15 +228,24 @@ function gatherTurnEvidence(transcriptPath, cwd = process.cwd()) {
 
   // Files written by a script run through Bash never appear as Edit or Write calls,
   // so a turn that patched four test files in one command scored as adding one.
-  const files = [...new Set([...(turn.files || []), ...gitFilesSince(turn.timestamp, cwd)])];
-  const testsAdded = files.filter((f) => /\.test\.[cm]?js$/.test(f)).length;
+  // The transcript names files absolutely and git relatively, so one file was counted
+  // twice until both were resolved to the same key.
+  const byKey = new Map();
+  for (const f of [...(turn.files || []), ...gitFilesSince(turn.timestamp, cwd)]) {
+    const abs = path.resolve(cwd, f);
+    byKey.set(process.platform === 'win32' ? abs.toLowerCase() : abs, abs);
+  }
+  const files = [...byKey.values()];
+  const testsAdded = files.filter((f) => TEST_FILE.test(f)).length;
   // In a skills repo most docs are SKILL.md and references/, not just README.
   // This scored a turn that updated two skill docs as "no docs".
   const docsUpdated = files.some((f) => /\.md$/i.test(f) && !/[\\/]memory[\\/]/.test(f));
 
+  /** @type {{testsAdded: number, docsUpdated: boolean, sourcesChanged: number, untested: string[], toolCount: number, tier?: string}} */
   const out = {
     testsAdded,
     docsUpdated,
+    ...testedSources(files, cwd),
     toolCount: turn.edits + turn.commands + turn.reads,
   };
 
@@ -135,6 +259,37 @@ function gatherTurnEvidence(transcriptPath, cwd = process.cwd()) {
   return out;
 }
 
+const TEST_FILE = /\.test\.[cm]?[jt]s$/;
+const SOURCE_FILE = /\.[cm]?[jt]sx?$/;
+
+/**
+ * Which changed modules no changed test exercises. Durability is whether each change
+ * is pinned by a test, not how many test files moved: the old count scored one
+ * thorough test of the one module changed below six test files touched in passing.
+ * A test exercises a module when it names the module's file. Files outside the
+ * project (scratch scripts) and deleted files are not the project's code.
+ *
+ * @param {string[]} files absolute paths
+ * @param {string} cwd
+ * @returns {{sourcesChanged: number, untested: string[]}}
+ */
+function testedSources(files, cwd) {
+  const { isInside } = require('../paths.cjs');
+  const bodies = files.filter((f) => TEST_FILE.test(f)).map((t) => {
+    try {
+      return fs.readFileSync(t, 'utf8');
+    } catch {
+      return '';
+    }
+  });
+  const sources = files.filter((f) => SOURCE_FILE.test(f) && !TEST_FILE.test(f)
+    && !/[\\/]node_modules[\\/]/.test(f) && isInside(f, cwd) && fs.existsSync(f));
+  const untested = sources
+    .filter((s) => !bodies.some((b) => b.includes(path.basename(s))))
+    .map((s) => path.relative(cwd, s).replace(/\\/g, '/'));
+  return { sourcesChanged: sources.length, untested };
+}
+
 /**
  * Files git says changed since the turn began: committed since then, or modified
  * since then and still uncommitted. Empty outside a git repository.
@@ -146,24 +301,29 @@ function gatherTurnEvidence(transcriptPath, cwd = process.cwd()) {
 function gitFilesSince(since, cwd) {
   const start = Date.parse(String(since || ''));
   if (!start) return [];
-  const { execFileSync } = require('child_process');
-  const git = (args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  try {
-    const committed = git(['log', `--since=${new Date(start).toISOString()}`, '--name-only', '--pretty=format:']);
-    const pending = git(['status', '--porcelain'])
-      .split('\n')
-      .map((l) => l.slice(3).trim())
-      .filter((f) => {
-        try {
-          return f && fs.statSync(path.join(cwd, f)).mtimeMs >= start;
-        } catch {
-          return false;
-        }
-      });
-    return [...committed.split('\n').map((l) => l.trim()).filter(Boolean), ...pending];
-  } catch {
-    return [];
-  }
+  // Each query fails on its own: `git log` errors in a repo with no commits yet, and
+  // that used to discard the uncommitted files too.
+  const git = (args) => {
+    try {
+      return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch {
+      return '';
+    }
+  };
+  const committed = git(['log', `--since=${new Date(start).toISOString()}`, '--name-only', '--pretty=format:']);
+  // Without --untracked-files=all a new directory is one entry ("src/"), and every
+  // file created inside it went uncounted.
+  const pending = git(['status', '--porcelain', '--untracked-files=all'])
+    .split('\n')
+    .map((l) => l.slice(3).trim())
+    .filter((f) => {
+      try {
+        return f && fs.statSync(path.join(cwd, f)).mtimeMs >= start;
+      } catch {
+        return false;
+      }
+    });
+  return [...committed.split('\n').map((l) => l.trim()).filter(Boolean), ...pending];
 }
 
 function readLog() {
@@ -205,6 +365,9 @@ function main() {
     if (evidence.testsTotal) {
       console.log(`\nevidence: ${evidence.testsPass}/${evidence.testsTotal} tests` +
         (evidence.coveragePct ? `, ${evidence.coveragePct}% coverage` : ''));
+    }
+    if (evidence.untested && evidence.untested.length) {
+      console.log(`no changed test exercises: ${evidence.untested.join(', ')}`);
     }
 
     appendLog({
@@ -250,4 +413,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { sessionTranscript, gatherTurnEvidence, pickTestCommand };
+module.exports = { sessionTranscript, gatherTurnEvidence, testedSources, pickTestCommand, parsePytestSummary };
