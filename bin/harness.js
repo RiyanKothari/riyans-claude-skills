@@ -19,13 +19,15 @@ const PROFILES = {
   strict: { hooks: ['core', 'recall', 'loop', 'switch', 'finalize'], desc: 'standard + outcome capture (the learning loop)' },
 };
 
+// Timeouts are seconds: Claude Code multiplies them by 1000. Versions before 1.1.0
+// wrote 6000, which let a hung hook hold a session for 100 minutes.
 const HOOK_SPEC = {
-  core: { event: 'SessionStart', timeout: 6000 },
-  recall: { event: 'UserPromptSubmit', timeout: 8000 },
-  loop: { event: 'Stop', timeout: 6000 },
-  finalize: { event: 'Stop', timeout: 6000 },
+  core: { event: 'SessionStart', timeout: 6 },
+  recall: { event: 'UserPromptSubmit', timeout: 8 },
+  loop: { event: 'Stop', timeout: 6 },
+  finalize: { event: 'Stop', timeout: 6 },
   // Fires only when the model changes, so it adds nothing per turn.
-  switch: { event: 'PreModelSwitch', timeout: 6000 },
+  switch: { event: 'PreModelSwitch', timeout: 6 },
 };
 
 function claudeDir(global) {
@@ -111,12 +113,17 @@ function addHooks(settings, modes, opts = {}) {
     // Match on our own tag, not on the command string: JSON escaping makes
     // substring checks against quoted paths silently fail, which would let a
     // repeat install stack duplicate hooks.
-    const already = settings.hooks[spec.event].some((g) => g && g[MARKER] === mode);
-    if (already) continue;
+    const hook = { type: 'command', command: cmd, timeout: spec.timeout };
+    const mine = settings.hooks[spec.event].find((g) => g && g[MARKER] === mode);
+    if (mine) {
+      // A re-install repairs what an older version wrote, such as a timeout in ms.
+      mine.hooks = [hook];
+      continue;
+    }
 
     settings.hooks[spec.event].push({
       [MARKER]: mode,
-      hooks: [{ type: 'command', command: cmd, timeout: spec.timeout }],
+      hooks: [hook],
     });
     added.push(`${spec.event}:${mode}`);
   }

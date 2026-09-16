@@ -25,6 +25,9 @@ const path = require('path');
 const HARNESS_ROOT = path.join(__dirname, '..', '..');
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const GLOBAL = process.argv.includes('--global');
+// Installed as a Claude Code plugin: subagents are namespaced by the plugin name.
+const PLUGIN = process.argv.includes('--plugin');
+const AGENT_PREFIX = PLUGIN ? 'rcskills:' : '';
 
 function samePath(a, b) {
   const norm = (p) => path.resolve(p);
@@ -192,13 +195,13 @@ function routerNote(r, neighbors) {
     const ev = neighbors.length >= 2 ? `, ${neighbors.length} similar past turns` : '';
     const ctx = `${Math.round(r.contextTokens / 1000)}k`;
     return `[router] delegate -> haiku (${r.tier}, score ${r.score}${ev}; ~${r.savedPct}% cheaper than ${r.sessionModel} at ${ctx} context). ` +
-      `Call the Agent tool with subagent_type "${r.agentType}" and model "haiku", passing a self-contained brief: ` +
+      `Call the Agent tool with subagent_type "${AGENT_PREFIX}${r.agentType}" and model "haiku", passing a self-contained brief: ` +
       'the files, the exact change, and the command that verifies it. Check its result. ' +
       'Stay inline only if the brief would need this conversation\'s history.';
   }
   if (r.direction === 'up') {
     return `[router] escalate -> opus (${r.tier}; this session runs ${r.sessionModel}). ` +
-      `Hand the reasoning-heavy core to the Agent tool with subagent_type "${r.agentType}" and model "opus", ` +
+      `Hand the reasoning-heavy core to the Agent tool with subagent_type "${AGENT_PREFIX}${r.agentType}" and model "opus", ` +
       'with a complete brief, and keep the mechanical parts here.';
   }
   return null;
@@ -595,6 +598,26 @@ function modeLoop() {
 // Inside the harness repo the project settings already run this hook; a global
 // copy firing as well would double every outcome record.
 if (GLOBAL && samePath(ROOT, HARNESS_ROOT)) process.exit(0);
+
+/** True when `rcskills install` already wired this hook into settings Claude Code reads. */
+function settingsInstallPresent() {
+  const files = [
+    path.join(os.homedir(), '.claude', 'settings.json'),
+    path.join(ROOT, '.claude', 'settings.json'),
+    path.join(ROOT, '.claude', 'settings.local.json'),
+  ];
+  return files.some((f) => {
+    try {
+      return fs.readFileSync(f, 'utf8').includes('learning-hook.cjs');
+    } catch {
+      return false;
+    }
+  });
+}
+
+// Installed both ways, the settings copy runs and the plugin copy stands down, so
+// no advice line or memory record is ever doubled.
+if (PLUGIN && settingsInstallPresent()) process.exit(0);
 
 const mode = process.argv[2];
 if (mode === 'core') modeCore();

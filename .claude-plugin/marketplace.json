@@ -1,0 +1,16 @@
+{
+  "name": "riyans-claude-skills",
+  "description": "Measured cost control and verification skills for Claude Code.",
+  "owner": {
+    "name": "Riyan Kothari",
+    "url": "https://github.com/RiyanKothari"
+  },
+  "plugins": [
+    {
+      "name": "rcskills",
+      "source": "./",
+      "description": "Measured cost control for Claude Code: cache-lapse warnings, model routing, bounded memory, ralph loops and evidence-gated scoring.",
+      "category": "productivity"
+    }
+  ]
+}

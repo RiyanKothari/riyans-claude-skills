@@ -1,0 +1,13 @@
+{
+  "name": "rcskills",
+  "version": "1.1.0",
+  "description": "Measured cost control for Claude Code: tells you before the prompt cache lapses, explains every costly re-send, routes small work to cheaper models, keeps bounded memory across sessions, and scores each task on evidence.",
+  "author": {
+    "name": "Riyan Kothari",
+    "url": "https://github.com/RiyanKothari"
+  },
+  "homepage": "https://github.com/RiyanKothari/riyans-claude-skills",
+  "repository": "https://github.com/RiyanKothari/riyans-claude-skills",
+  "license": "MIT",
+  "keywords": ["token-cost", "prompt-caching", "model-routing", "memory", "ralph-loop", "verification"]
+}

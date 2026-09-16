@@ -31,3 +31,6 @@ coverage/
 
 # ...except the hooks this project actually owns.
 !.claude/helpers/learning-hook.cjs
+
+# Local Ruflo MCP config: a plugin root .mcp.json would start it for every user.
+.mcp.json

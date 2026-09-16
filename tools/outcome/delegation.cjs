@@ -19,7 +19,9 @@ const TYPE_MODEL = { 'rc-haiku': 'haiku', 'rc-sonnet': 'sonnet', 'rc-opus': 'opu
 
 function agentModel(input) {
   if (input.model) return modelFamily(input.model) || String(input.model);
-  return TYPE_MODEL[input.subagent_type] || '(inherit)';
+  // A plugin install names them rcskills:rc-haiku and so on.
+  const type = String(input.subagent_type || '').replace(/^rcskills:/, '');
+  return TYPE_MODEL[type] || '(inherit)';
 }
 
 // Hook output lands as an attachment (or a meta user record in older versions).

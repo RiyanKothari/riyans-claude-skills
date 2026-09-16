@@ -1,18 +1,75 @@
 # Riyan's Claude Skills
 
-Skills and a harness for Claude Code. Every rule in here was earned from
-something that actually broke or was actually measured — nothing is aspirational.
+Claude Code skills and hooks that cut what a session costs, and make Claude prove
+its work. Every rule was measured on real sessions (2,944 requests, $886) or earned
+from something that broke.
 
-MIT licensed. No API key, no daemon, no native dependency. Node 18+.
+MIT licensed. Node 18+. No API key, no daemon, no dependencies.
+
+## What you get
+
+- **No surprise cache bills.** In a large session Claude's reply ends with how long
+  the prompt cache stays cheap and what coming back later will cost, and after any
+  turn that paid to re-send cached context, the next reply says why and how to avoid it.
+- **Cheaper models where they are safe.** Small mechanical work goes to a Haiku
+  subagent, but only in sessions long enough for that to cost less. On past
+  transcripts (143 turns that edited files or ran commands) it never handed real
+  work to a weak model.
+- **Memory that cannot bloat.** Standing rules reach every session in 400 tokens or
+  less. Each prompt recalls only what scores, capped at 350.
+- **`/rcskills:ralph-loop`** keeps Claude working on a task until a completion
+  promise is verifiably true, or a hard cap is reached.
+- **Discipline skills** that load only when relevant: verify before claiming, safe
+  config and delete operations, secrets hygiene, systematic debugging.
+
+## Install
+
+From a terminal:
+
+```bash
+claude plugin marketplace add RiyanKothari/riyans-claude-skills
+```
+
+```bash
+claude plugin install rcskills@riyans-claude-skills
+```
+
+Or type `/plugin marketplace add RiyanKothari/riyans-claude-skills` and then
+`/plugin install rcskills@riyans-claude-skills` inside Claude Code. Start a new
+session afterwards, because hooks load when a session starts.
+
+It adds about 730 tokens per session for the skill and subagent descriptions
+(`claude plugin details rcskills@riyans-claude-skills` shows the breakdown); the
+hooks cost no model tokens. `rcskills` is on Claude's shell PATH, so you can ask
+Claude to run any command below.
+
+To remove it: `claude plugin uninstall rcskills@riyans-claude-skills`. Your memory
+and scorecards stay in `~/.claude/token-harness`.
+
+<details>
+<summary>Install without the plugin system</summary>
 
 ```bash
 git clone https://github.com/RiyanKothari/riyans-claude-skills
-cd riyans-claude-skills && npm install
-node bin/harness.js install --profile standard
-node bin/harness.js doctor
+cd riyans-claude-skills && npm link
+rcskills install --profile standard --global
+rcskills doctor --global
 ```
 
-`--global` installs to `~/.claude` instead of the current project.
+Leave out `--global` to install into the current project only. Installed both
+ways, the plugin's hooks stand down so nothing runs twice.
+
+</details>
+
+## What you will see
+
+| When | Line | What to do |
+|---|---|---|
+| A large session, before stepping away | `367k tokens cached. Reply within 30 min to keep it cheap…` | Reply soon, or `/compact` first |
+| After a turn that re-sent cached context | `The last turn re-sent 306k already-cached tokens (~$3.06) because…` | Follow the fix it names |
+| Context worth compacting | `[context]` line, relayed as a one-sentence `/compact` suggestion | Compact at the next break |
+| `/model` re-selecting the model already in use | A confirmation, with the re-cache price | Cancel unless you meant it |
+| A new session after `/clear` | `[last session 2h ago]` recent asks, files and last reply | Nothing: Claude has the thread |
 
 ## The skills
 
@@ -43,9 +100,10 @@ checks every skill for:
 It caught a real bug on its first run: a bulk rename had rewritten
 `token-harness`'s frontmatter name, which would have stopped it loading.
 
-## Profiles
+## Profiles (settings install)
 
-Each hook is a node process (~166 ms measured), so this is a real cost choice.
+The plugin always runs `standard`. Each hook is a node process (166-650 ms
+measured, depending on the machine), so the settings install lets you choose.
 
 | Profile | Hooks | Per-turn | Use when |
 |---|---|---|---|
@@ -62,7 +120,8 @@ a test asserting it.
 
 ## Commands
 
-From any project, once the CLI is linked (`npm link` in this repo):
+Claude can run these in any project once the plugin is installed (or after
+`npm link` in this repo, for your own terminal):
 
 ```bash
 rcskills route "your task"          # which model can do this?
@@ -226,7 +285,8 @@ prices each prompt against the session's real context and stays silent otherwise
 ## Development
 
 ```bash
-npm run verify        # typecheck + skill lint + 320 tests
+npm install --include=dev   # .npmrc omits dev deps so plugin installs download nothing
+npm run verify        # typecheck + skill lint + 327 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```

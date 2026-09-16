@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+// On the Bash tool's PATH when installed as a Claude Code plugin.
+require('./harness.js');

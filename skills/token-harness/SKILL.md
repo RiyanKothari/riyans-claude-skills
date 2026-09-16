@@ -18,7 +18,8 @@ not asserted.
 | Doubting the router | Backtest | `rcskills backtest` |
 | Context feels bloated | Audit | `rcskills audit` |
 
-`rcskills` works from any project once linked (`npm link` in the harness repo).
+`rcskills` is on the shell PATH when installed as a plugin, and from any project
+once linked (`npm link` in the harness repo).
 Inside the harness repo, `npm run <tool> --` does the same thing.
 
 ## Core rules
@@ -31,7 +32,7 @@ code; this is reuse, not code golf.
 
 **2. Act on the router, and let evidence pick the model.**
 A `[router] delegate -> haiku` line is an instruction: call the Agent tool with the
-named subagent (`rc-haiku`, pinned to Haiku 4.5) and a self-contained brief — files,
+named subagent (`rc-haiku`, or `rcskills:rc-haiku` in a plugin install; pinned to Haiku 4.5) and a self-contained brief — files,
 exact change, verifying command — then check what it did. `escalate -> opus` hands
 the reasoning-heavy core to `rc-opus` when the session runs a weaker model. The
 router delegates down only on clear cheap evidence (score -2 or lower): vague work

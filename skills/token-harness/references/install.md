@@ -1,22 +1,33 @@
 # Install
 
+As a plugin (runs the `standard` profile):
+
+```bash
+claude plugin marketplace add RiyanKothari/riyans-claude-skills
+claude plugin install rcskills@riyans-claude-skills
+```
+
+Or through settings, which lets you pick a profile:
+
 ```bash
 node bin/harness.js install --profile standard
 node bin/harness.js doctor
 ```
 
-Add `--global` to install into `~/.claude` instead of the current project.
+Add `--global` to install into `~/.claude` instead of the current project. If both
+are installed, the plugin's hooks stand down so nothing fires twice.
 
 ## Profiles
 
-Each hook is a node process (~166ms measured), so the profile is a real
-overhead choice, not a preference.
+Each hook is a node process (166-650ms measured), so the profile is a real
+overhead choice, not a preference. Hook timeouts are seconds; versions before
+1.1.0 wrote milliseconds, and re-running install repairs them.
 
 | Profile | Hooks | Per-turn cost | Use when |
 |---|---|---|---|
 | `minimal` | none | zero | You want the skill and CLI tools only |
-| `standard` | core, recall | ~1 spawn/turn | Default. Memory works automatically |
-| `strict` | core, recall, finalize | ~2 spawns/turn | You want the router to learn from outcomes |
+| `standard` | core, recall, loop, switch | ~2 spawns/turn | Default. Memory, cache advice and ralph loops |
+| `strict` | + finalize | ~3 spawns/turn | You want the router to learn from outcomes |
 
 There is deliberately **no PostToolUse hook** in any profile. It would spawn one
 process per tool call, and real turns average 12.6 tool calls. The `finalize`

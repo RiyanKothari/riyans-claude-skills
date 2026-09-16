@@ -28,8 +28,8 @@ function session(lines) {
   return { dir, tp, clean: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
-function recall(s, prompt) {
-  return spawnSync(process.execPath, [HOOK, 'recall'], {
+function recall(s, prompt, args = []) {
+  return spawnSync(process.execPath, [HOOK, 'recall', ...args], {
     cwd: s.dir,
     encoding: 'utf8',
     input: JSON.stringify({ prompt, transcript_path: s.tp, session_id: 'sess-router' }),
@@ -48,6 +48,23 @@ test('clear mechanical work gets a directive naming the pinned subagent', () => 
   const out = recall(s, 'fix a typo in the readme');
   assert.match(out, /\[router\] delegate -> haiku/);
   assert.match(out, /subagent_type "rc-haiku"/);
+  s.clean();
+});
+
+test('installed as a plugin, the directive names the namespaced subagent', () => {
+  const s = session([human('earlier'), usage('claude-opus-5')]);
+  // Claude Code names plugin agents <plugin>:<agent>; a bare "rc-haiku" would not resolve.
+  // HOME points at the empty session dir, so no settings install makes the plugin stand down.
+  const out = spawnSync(process.execPath, [HOOK, 'recall', '--plugin'], {
+    cwd: s.dir,
+    encoding: 'utf8',
+    input: JSON.stringify({ prompt: 'fix a typo in the readme', transcript_path: s.tp, session_id: 'sess-router' }),
+    env: {
+      ...process.env, HOME: s.dir, USERPROFILE: s.dir, CLAUDE_PROJECT_DIR: s.dir,
+      TOKEN_HARNESS_CONFIG: path.join(s.dir, 'no-config.json'), TOKEN_HARNESS_COMPACT: 'off', SMART_MEMORY_PATH: '',
+    },
+  }).stdout;
+  assert.match(out, /subagent_type "rcskills:rc-haiku"/);
   s.clean();
 });
 

@@ -27,12 +27,13 @@ test('a routed turn counts as followed only when the named model was used', () =
     human('fix a typo'), hookNote(DIRECTIVE), agent({ subagent_type: 'rc-haiku', prompt: 'x' }),
     human('rename foo'), hookNote(DIRECTIVE), agent({ subagent_type: 'general-purpose', prompt: 'x' }),
     human('bump version'), hookNote(DIRECTIVE),
+    human('fix another typo'), hookNote(DIRECTIVE), agent({ subagent_type: 'rcskills:rc-haiku', prompt: 'x' }),
   ]);
   const r = followThrough([p]);
-  assert.strictEqual(r.routed, 3);
-  assert.strictEqual(r.followed, 1);
-  assert.strictEqual(r.agentCalls, 2);
-  assert.deepStrictEqual(r.byModel, { haiku: 1, '(inherit)': 1 });
+  assert.strictEqual(r.routed, 4);
+  assert.strictEqual(r.followed, 2, 'the plugin-namespaced subagent counts too');
+  assert.strictEqual(r.agentCalls, 3);
+  assert.deepStrictEqual(r.byModel, { haiku: 2, '(inherit)': 1 });
   fs.unlinkSync(p);
 });
 
