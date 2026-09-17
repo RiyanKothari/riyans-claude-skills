@@ -1,23 +1,50 @@
 'use strict';
 
-// Anthropic first-party list prices, USD per million tokens, from the claude-api
-// reference (cached 2026-06-24). `cacheRead` is set only where it differs from the
-// usual 0.1x input. Update when list prices change.
+// Anthropic first-party list prices, USD per million tokens, from
+// platform.claude.com/docs/en/about-claude/pricing (checked 2026-09-17). `cacheRead`
+// is set only where it differs from the usual 0.1x input. Update when prices change.
 const PRICING = {
   'claude-fable-5-1': { in: 10, out: 50, cacheRead: 0.25 },
+  'claude-mythos-5-1': { in: 10, out: 50, cacheRead: 0.25 },
   'claude-fable-5': { in: 10, out: 50 },
+  'claude-mythos-5': { in: 10, out: 50 },
   'claude-opus-5': { in: 5, out: 25 },
   'claude-opus-4-8': { in: 5, out: 25 },
   'claude-opus-4-7': { in: 5, out: 25 },
   'claude-opus-4-6': { in: 5, out: 25 },
+  'claude-opus-4-5': { in: 5, out: 25 },
+  'claude-opus-4-1': { in: 15, out: 75 },
+  'claude-opus-4': { in: 15, out: 75 },
   'claude-sonnet-5': { in: 2, out: 10 },
   'claude-sonnet-4-6': { in: 3, out: 15 },
+  'claude-sonnet-4-5': { in: 3, out: 15 },
+  'claude-sonnet-4': { in: 3, out: 15 },
   'claude-haiku-4-5': { in: 1, out: 5 },
+  'claude-haiku-3-5': { in: 0.8, out: 4 },
 };
 
-// Context windows in tokens; every priced model not listed here has 1M.
-const WINDOW = { 'claude-haiku-4-5': 200000 };
+// Context windows in tokens. Claude 4.6 and later have 1M; earlier models 200k.
+const WINDOW = {
+  'claude-opus-4-5': 200000,
+  'claude-opus-4-1': 200000,
+  'claude-opus-4': 200000,
+  'claude-sonnet-4-5': 200000,
+  'claude-sonnet-4': 200000,
+  'claude-haiku-4-5': 200000,
+  'claude-haiku-3-5': 200000,
+};
 const DEFAULT_WINDOW = 1000000;
+
+// A Claude model newer than this table is priced as its family's newest known
+// model, so a release does not silently switch the cache guard off. Anything that
+// is not recognisably Claude stays unpriced.
+const FAMILY_FALLBACK = {
+  fable: 'claude-fable-5-1',
+  mythos: 'claude-mythos-5-1',
+  opus: 'claude-opus-5',
+  sonnet: 'claude-sonnet-5',
+  haiku: 'claude-haiku-4-5',
+};
 
 const CACHE_READ_MULTIPLIER = 0.1;
 const CACHE_WRITE_5M = 1.25;
@@ -44,13 +71,34 @@ const FRESH_SESSION_TOKENS = 56000;
 const DEFAULT_TASK_CALLS = 2;
 const OUT_PER_REQUEST = 400;
 
-/** Transcripts sometimes record a dated id (claude-haiku-4-5-20251001); price by the base id. */
+/**
+ * The base id a model is priced by. Transcripts and providers spell one model many
+ * ways: dated (claude-haiku-4-5-20251001), Bedrock (us.anthropic.claude-sonnet-4-5-
+ * 20250929-v1:0), Vertex (claude-sonnet-4-5@20250929), aliased (claude-opus-4-0),
+ * with a context suffix (claude-sonnet-4-5[1m]) or in the legacy order (claude-3-5-haiku).
+ */
 function normalizeModel(model) {
-  return String(model || '').replace(/-\d{8}$/, '');
+  let id = String(model || '').trim().toLowerCase();
+  id = id.replace(/\[[^\]]*\]$/, '');
+  const at = id.lastIndexOf('claude-');
+  if (at > 0) id = id.slice(at);
+  id = id.replace(/@.*$/, '').replace(/-v\d+(:\d+)?$/, '').replace(/-\d{8}$/, '');
+  id = id.replace(/^claude-(\d+)-(\d+)-(opus|sonnet|haiku)$/, 'claude-$3-$1-$2');
+  id = id.replace(/^claude-(\d+)-(opus|sonnet|haiku)$/, 'claude-$2-$1');
+  return id.replace(/^(claude-[a-z]+-\d+)-0$/, '$1');
+}
+
+/** The table entry a model is priced by: its own, else its family's newest. */
+function pricedId(model) {
+  const id = normalizeModel(model);
+  if (PRICING[id]) return id;
+  const family = /^claude-([a-z]+)-\d/.exec(id);
+  return family && FAMILY_FALLBACK[family[1]] ? FAMILY_FALLBACK[family[1]] : null;
 }
 
 function rate(model) {
-  return PRICING[normalizeModel(model)] || null;
+  const id = pricedId(model);
+  return id ? PRICING[id] : null;
 }
 
 function cacheReadRate(model) {
@@ -60,8 +108,8 @@ function cacheReadRate(model) {
 }
 
 function contextWindow(model) {
-  const id = normalizeModel(model);
-  if (!PRICING[id]) return null;
+  const id = pricedId(model);
+  if (!id) return null;
   return WINDOW[id] || DEFAULT_WINDOW;
 }
 
@@ -169,6 +217,7 @@ module.exports = {
   cacheReadRate,
   contextWindow,
   normalizeModel,
+  pricedId,
   PRICING,
   CACHE_READ_MULTIPLIER,
   CACHE_WRITE_5M,

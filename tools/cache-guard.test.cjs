@@ -151,3 +151,8 @@ test('the handoff names recent asks, edited files and the last reply, clipped', 
   assert.strictEqual(handoffSummary({ prompts: [], files: [], lastText: '' }), null);
   assert.strictEqual(handoffSummary(null), null);
 });
+
+test('a Bedrock Sonnet 4.5 session gets the same notice, at its own price', () => {
+  const r = notice({ model: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' });
+  assert.match(String(r.message), /re-sends it all \(~\$3\.00\)/);
+});

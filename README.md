@@ -43,6 +43,10 @@ It adds about 730 tokens per session for the skill and subagent descriptions
 hooks cost no model tokens. `rcskills` is on Claude's shell PATH, so you can ask
 Claude to run any command below.
 
+Cost notices work on every Claude model from Opus 4 and Sonnet 4 on, including
+Bedrock and Vertex model ids, at each model's list price. A release newer than the
+price table is priced as its family's newest model until the table catches up.
+
 To remove it: `claude plugin uninstall rcskills@riyans-claude-skills`. Your memory
 and scorecards stay in `~/.claude/token-harness`.
 
