@@ -31,9 +31,11 @@ const HOOK_SPEC = {
   switch: { event: 'PreModelSwitch', timeout: 6 },
 };
 
+// Claude Code reads user settings from CLAUDE_CONFIG_DIR when it is set, so a
+// global install written to ~/.claude there would never load.
 function claudeDir(global) {
   return global
-    ? path.join(os.homedir(), '.claude')
+    ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
     : path.join(process.cwd(), '.claude');
 }
 
@@ -352,7 +354,7 @@ function usage() {
   for (const [k, v] of Object.entries(PROFILES)) {
     console.log(`  ${k.padEnd(9)} ${v.desc}`);
   }
-  console.log('\n--global installs to ~/.claude instead of ./.claude');
+  console.log('\n--global installs to ~/.claude (or CLAUDE_CONFIG_DIR) instead of ./.claude');
 }
 
 function main() {
@@ -380,5 +382,5 @@ function main() {
 main();
 
 module.exports = {
-  PROFILES, HOOK_SPEC, addHooks, removeHooks, hookCommand, readSettings, MARKER,
+  PROFILES, HOOK_SPEC, addHooks, removeHooks, hookCommand, readSettings, claudeDir, MARKER,
 };

@@ -82,7 +82,7 @@ test('installed both ways, the plugin copy stands down so nothing fires twice', 
 
   // The pinned record lives in the project store the hook reads under --global.
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-proj-'));
-  const run = (args) => spawnSync(process.execPath, [path.join(REPO, '.claude', 'helpers', 'learning-hook.cjs'), 'core', ...args], {
+  const run = (args, extraEnv = {}) => spawnSync(process.execPath, [path.join(REPO, '.claude', 'helpers', 'learning-hook.cjs'), 'core', ...args], {
     cwd: project,
     encoding: 'utf8',
     input: JSON.stringify({ session_id: 'plugin-test', source: 'startup' }),
@@ -93,6 +93,8 @@ test('installed both ways, the plugin copy stands down so nothing fires twice', 
       CLAUDE_PROJECT_DIR: project,
       TOKEN_HARNESS_CONFIG: path.join(home, 'config.json'),
       SMART_MEMORY_PATH: path.join(home, 'seed.jsonl'),
+      CLAUDE_CONFIG_DIR: '',
+      ...extraEnv,
     },
   });
 
@@ -103,6 +105,17 @@ test('installed both ways, the plugin copy stands down so nothing fires twice', 
   }));
   assert.strictEqual(run(['--global', '--plugin']).stdout, '', 'plugin stands down beside a settings install');
   assert.match(run(['--global']).stdout, /linter first/, 'the settings copy still runs');
+
+  // Claude Code reads user settings from CLAUDE_CONFIG_DIR when it is set, so a
+  // settings install there must silence the plugin too, and one left in ~/.claude must not.
+  const settings = fs.readFileSync(path.join(home, '.claude', 'settings.json'));
+  fs.rmSync(path.join(home, '.claude', 'settings.json'));
+  const configDir = path.join(home, 'claude-config');
+  fs.mkdirSync(configDir);
+  fs.writeFileSync(path.join(configDir, 'settings.json'), settings);
+  assert.strictEqual(run(['--global', '--plugin'], { CLAUDE_CONFIG_DIR: configDir }).stdout, '',
+    'plugin stands down beside a settings install in CLAUDE_CONFIG_DIR');
+  assert.match(run(['--global', '--plugin']).stdout, /linter first/, 'without it, that folder is not read');
 
   fs.rmSync(project, { recursive: true, force: true });
   fs.rmSync(home, { recursive: true, force: true });

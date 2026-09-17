@@ -319,7 +319,8 @@ CI runs the suite on Ubuntu and Windows across Node 18/20/22, plus an install
 smoke test that asserts a pre-existing config survives installation. It also runs
 the `npx github:… spend` one-liner above exactly as a stranger would, fetched from
 GitHub with no checkout, on Linux, macOS and Windows under Node 18 and 22, and
-requires the exact dollar figure for a sample transcript.
+requires the exact dollar figure for a sample transcript. And it installs the plugin with the real `claude plugin` commands on all three
+systems and runs every hook the way Claude Code does ([scripts/plugin-smoke.sh](scripts/plugin-smoke.sh)).
 
 ## License
 

@@ -620,7 +620,7 @@ if (GLOBAL && samePath(ROOT, HARNESS_ROOT)) process.exit(0);
 /** True when `rcskills install` already wired this hook into settings Claude Code reads. */
 function settingsInstallPresent() {
   const files = [
-    path.join(os.homedir(), '.claude', 'settings.json'),
+    path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json'),
     path.join(ROOT, '.claude', 'settings.json'),
     path.join(ROOT, '.claude', 'settings.local.json'),
   ];

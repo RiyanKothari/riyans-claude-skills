@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
-  PROFILES, HOOK_SPEC, addHooks, removeHooks, readSettings, MARKER,
+  PROFILES, HOOK_SPEC, addHooks, removeHooks, readSettings, claudeDir, MARKER,
 } = require('../../bin/harness.js');
 
 function tmpSettings(content) {
@@ -174,4 +174,19 @@ test('no hook is registered on PostToolUse', () => {
   // It would spawn one process per tool call. This is a load-bearing absence.
   const events = Object.values(HOOK_SPEC).map((s) => s.event);
   assert.ok(!events.includes('PostToolUse'));
+});
+
+test('--global installs where Claude Code reads user settings, including CLAUDE_CONFIG_DIR', () => {
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  try {
+    delete process.env.CLAUDE_CONFIG_DIR;
+    assert.strictEqual(claudeDir(true), path.join(os.homedir(), '.claude'));
+    // Written to ~/.claude, a global install would never load for this user.
+    process.env.CLAUDE_CONFIG_DIR = path.join(os.tmpdir(), 'claude-config');
+    assert.strictEqual(claudeDir(true), path.join(os.tmpdir(), 'claude-config'));
+    assert.strictEqual(claudeDir(false), path.join(process.cwd(), '.claude'), 'a project install is unaffected');
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = saved;
+  }
 });
