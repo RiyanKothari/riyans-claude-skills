@@ -9,7 +9,7 @@ not the number — it is that **four of the seven cannot be inflated**.
 | Verification | 18 | suite actually running, plus coverage |
 | Durability | 14 | share of changed modules a changed test names (6), docs edited (4) |
 | Scope fit | 14 | self-rated |
-| Efficiency | 12 | tool count vs the tier baseline |
+| Efficiency | 12 | tool count vs the work the turn did |
 | Honesty | 12 | self-rated |
 | Completeness | 10 | self-rated |
 
@@ -25,16 +25,30 @@ coverage run supplies both the pass/fail counts and the coverage number —
 
 ## Efficiency is measured, not felt
 
-Tool count against the tier baseline, calibrated from real backtested turns:
+Tool count against what the turn is allowed, which is the larger of the tier
+baseline and the measured cost of touching that many files:
 
 ```
-trivial: 2   simple: 5   moderate: 14   complex: 30
+tier floor:  trivial 2   simple 5   moderate 14   complex 30
+per file:    4 tool calls
+allowed   =  max(tier floor, 4 x distinct files)
 ratio <= 1        -> 10/10
-double expected   ->  5/10
+double allowed    ->  5/10
 ```
 
-Coming in under baseline is full marks, never a bonus. This detects *thrash* —
-retries, flailing, dead ends — which is what inefficiency actually looks like.
+Coming in under the allowance is full marks, never a bonus. This detects *thrash*
+— retries, flailing, dead ends — which is what inefficiency actually looks like.
+
+The per-file number is the median of 163 real turns that touched at least one
+file (p25 2.5, p50 4.0, p75 7.0, p90 11.0). It is the stable quantity: per-turn
+cost varies thirtyfold within the complex tier alone (p50 29 tools, p90 74, max
+150) while per-file cost barely moves between tiers — 3.0 simple, 4.0 moderate,
+4.1 complex. The flat tier baseline therefore scored *how much was asked for*
+rather than how it was done: an audit touching 16 files scored 0/10 while a
+two-file turn burning the same calls scored the same. The floor keeps that case
+honest — 100 calls on two files is still 0/10 — and the allowance never drops
+below the tier baseline, so a turn that touched no files is judged exactly as
+before.
 
 ## Weakest link
 

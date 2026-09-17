@@ -55,6 +55,20 @@ Two rules that cost this project real time:
   commit or push on it — use explicit `|| exit 1`, or require `fail 0` in captured
   output.
 
+## Efficiency (what the scorecard measures, and how to earn it)
+
+A turn is allowed the larger of its tier baseline and 4 tool calls per distinct
+file it touched — the median of 163 real turns. Going over means round trips that
+bought nothing. One audited turn here spent 105 calls on 11 files (9.5 each):
+75 were Bash, 24 were exact repeats, including 7 separate edits to one file, 6 to
+another, and 5 full `npm run verify` runs.
+
+- Make independent calls in one message. Serial one-line greps are the main leak.
+- Decide every change to a file, then make them; do not edit, look, edit again.
+- Run `npm run verify` once per logical batch, not after each edit. It is 23s.
+- Never re-read a file already read this turn, and never re-read a file just
+  edited — Edit fails loudly if it did not apply.
+
 ## Self-scorecard (run after every non-trivial task, without being asked)
 
 ```bash

@@ -211,7 +211,7 @@ function sessionTranscript(env = process.env, projectsDir) {
  * and how many tools it burned, so no time heuristic is needed.
  *
  * @param {string|null} [transcriptPath]
- * @returns {{testsAdded?: number, docsUpdated?: boolean, sourcesChanged?: number, untested?: string[], toolCount?: number, tier?: string}}
+ * @returns {{testsAdded?: number, docsUpdated?: boolean, sourcesChanged?: number, untested?: string[], toolCount?: number, distinctFiles?: number, tier?: string}}
  */
 function gatherTurnEvidence(transcriptPath, cwd = process.cwd()) {
   const p = transcriptPath || sessionTranscript();
@@ -241,12 +241,14 @@ function gatherTurnEvidence(transcriptPath, cwd = process.cwd()) {
   // This scored a turn that updated two skill docs as "no docs".
   const docsUpdated = files.some((f) => /\.md$/i.test(f) && !/[\\/]memory[\\/]/.test(f));
 
-  /** @type {{testsAdded: number, docsUpdated: boolean, sourcesChanged: number, untested: string[], toolCount: number, tier?: string}} */
+  /** @type {{testsAdded: number, docsUpdated: boolean, sourcesChanged: number, untested: string[], toolCount: number, distinctFiles: number, tier?: string}} */
   const out = {
     testsAdded,
     docsUpdated,
     ...testedSources(files, cwd),
     toolCount: turn.edits + turn.commands + turn.reads,
+    // What the turn's tool count is judged against: the size of the job it did.
+    distinctFiles: files.length,
   };
 
   try {
@@ -431,6 +433,13 @@ function main() {
     }
     if (evidence.untested && evidence.untested.length) {
       console.log(`no changed test exercises: ${evidence.untested.join(', ')}`);
+    }
+    // Efficiency is the parameter people argue with, so show its arithmetic.
+    if (typeof evidence.toolCount === 'number' && evidence.tier) {
+      const { TIER_EXPECTED_TOOLS, TOOLS_PER_FILE } = require('./rubric.cjs');
+      const allowed = Math.max(TIER_EXPECTED_TOOLS[evidence.tier] || 0, TOOLS_PER_FILE * (evidence.distinctFiles || 0));
+      console.log(`${evidence.toolCount} tool calls for ${evidence.distinctFiles || 0} file(s) `
+        + `(${evidence.tier} turn allows ${allowed}: ${TOOLS_PER_FILE}/file, floor ${TIER_EXPECTED_TOOLS[evidence.tier]})`);
     }
 
     appendLog({

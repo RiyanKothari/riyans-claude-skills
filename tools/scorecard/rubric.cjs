@@ -39,7 +39,7 @@ const PARAMETERS = [
     key: 'efficiency',
     label: 'Efficiency',
     weight: 12,
-    evidence: 'tool count against the tier baseline',
+    evidence: 'tool count against the work the turn did',
     asks: 'Was the cheapest adequate path taken, in tokens and in runtime?',
   },
   {
@@ -64,6 +64,15 @@ const UNBACKED_CAP = 5;
 // turns. Used to detect thrash, not to reward terseness — coming in under
 // the baseline is simply full marks.
 const TIER_EXPECTED_TOOLS = { trivial: 2, simple: 5, moderate: 14, complex: 30 };
+
+// Tool calls per distinct file touched, measured across 163 real turns that
+// touched at least one file: p25 2.5, p50 4.0, p75 7.0, p90 11.0. Per-turn cost
+// varies thirtyfold (complex turns: p50 29 tools, p90 74, max 150) while per-file
+// cost barely moves between tiers (simple 3.0, moderate 4.0, complex 4.1), so this
+// is the stable invariant and tool count alone was largely measuring how big the
+// job was. The tier baseline stays as a floor: it is what a turn touching no files
+// is allowed, and a turn that burns 100 calls on two files still scores zero.
+const TOOLS_PER_FILE = 4;
 
 const byKey = Object.fromEntries(PARAMETERS.map((p) => [p.key, p]));
 
@@ -109,10 +118,13 @@ function fromEvidence(ev = {}) {
     out.durabilityBacked = true;
   }
 
-  // Thrash is measurable: a turn burning far more tool calls than its tier
-  // normally needs was flailing, whatever it felt like from the inside.
+  // Thrash is measurable: a turn burning far more tool calls than the work in it
+  // needs was flailing, whatever it felt like from the inside. The allowance is
+  // whichever is larger — the tier's baseline, or the measured cost of touching
+  // that many files — so a long job is not mistaken for a wasteful one.
   if (typeof ev.toolCount === 'number' && ev.tier && TIER_EXPECTED_TOOLS[ev.tier]) {
-    const ratio = ev.toolCount / TIER_EXPECTED_TOOLS[ev.tier];
+    const expected = Math.max(TIER_EXPECTED_TOOLS[ev.tier], TOOLS_PER_FILE * (ev.distinctFiles || 0));
+    const ratio = ev.toolCount / expected;
     out.efficiency = clamp(ratio <= 1 ? 10 : 10 - (ratio - 1) * 5);
     out.efficiencyBacked = true;
   }
@@ -196,4 +208,5 @@ module.exports = {
   formatCard,
   UNBACKED_CAP,
   TIER_EXPECTED_TOOLS,
+  TOOLS_PER_FILE,
 };

@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const {
-  score, fromEvidence, formatCard, PARAMETERS, UNBACKED_CAP, TIER_EXPECTED_TOOLS,
+  score, fromEvidence, formatCard, PARAMETERS, UNBACKED_CAP, TIER_EXPECTED_TOOLS, TOOLS_PER_FILE,
 } = require('./rubric.cjs');
 
 test('parameters are weighted to exactly 100', () => {
@@ -133,6 +133,35 @@ test('thrash is detected: double the expected tools halves efficiency', () => {
 test('extreme thrash bottoms out at zero rather than going negative', () => {
   const ev = fromEvidence({ toolCount: TIER_EXPECTED_TOOLS.trivial * 20, tier: 'trivial' });
   assert.strictEqual(ev.efficiency, 0);
+});
+
+test('a big job is judged on its size, not punished for it', () => {
+  // 101 tool calls across 16 files is 6.3 per file — near the measured p50 of 4 and
+  // well inside p75 of 7. Against the flat complex baseline of 30 it scored 0/10,
+  // which measured how much was asked for rather than how it was done.
+  const flat = fromEvidence({ toolCount: 101, tier: 'complex' });
+  assert.strictEqual(flat.efficiency, 0);
+  const sized = fromEvidence({ toolCount: 101, tier: 'complex', distinctFiles: 16 });
+  assert.ok(sized.efficiency > 4 && sized.efficiency < 9, `got ${sized.efficiency}`);
+});
+
+test('the per-file allowance never excuses flailing on a few files', () => {
+  // The same 101 calls on two files is the thrash this parameter exists to catch:
+  // the tier baseline is a floor, so the allowance cannot fall below it either.
+  assert.strictEqual(fromEvidence({ toolCount: 101, tier: 'complex', distinctFiles: 2 }).efficiency, 0);
+  assert.strictEqual(
+    fromEvidence({ toolCount: 30, tier: 'complex', distinctFiles: 0 }).efficiency,
+    10,
+    'a turn that touched no files still gets its tier baseline',
+  );
+});
+
+test('the per-file allowance is the measured median, not a generous one', () => {
+  // p50 of 163 real turns. Anything larger would score the typical turn perfect and
+  // measure nothing; the constant is auditable against that number.
+  assert.strictEqual(TOOLS_PER_FILE, 4);
+  const atMedian = fromEvidence({ toolCount: 4 * 10, tier: 'moderate', distinctFiles: 10 });
+  assert.strictEqual(atMedian.efficiency, 10, 'a turn at the median cost is not penalised');
 });
 
 test('efficiency claimed without tool evidence is capped', () => {
