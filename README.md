@@ -316,7 +316,10 @@ npm run coverage      # ~94%
 ```
 
 CI runs the suite on Ubuntu and Windows across Node 18/20/22, plus an install
-smoke test that asserts a pre-existing config survives installation.
+smoke test that asserts a pre-existing config survives installation. It also runs
+the `npx github:… spend` one-liner above exactly as a stranger would, fetched from
+GitHub with no checkout, on Linux, macOS and Windows under Node 18 and 22, and
+requires the exact dollar figure for a sample transcript.
 
 ## License
 
