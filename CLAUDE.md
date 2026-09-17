@@ -1,18 +1,61 @@
-# Ruflo — Claude Code Configuration
+# Riyan's Claude Skills — working rules
+
+This repo is a Claude Code harness: cache-lapse warnings, model-tier routing,
+bounded memory, ralph loops and an evidence-gated scorecard. It ships as a plugin
+and as a settings install. Everything here is a rule this project earned.
 
 ## Rules
 
 - Do what has been asked; nothing more, nothing less
 - NEVER create files unless absolutely necessary — prefer editing existing files
 - NEVER create documentation files unless explicitly requested
-- NEVER save working files or tests to root — use `/src`, `/tests`, `/docs`, `/config`, `/scripts`
+- NEVER save working files or tests to root — use `tools/`, `skills/`, `scripts/`
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
-- NEVER add a `Co-Authored-By` trailer to user commits unless this project's `.claude/settings.json` has `attribution.commit` set (#2078). The Claude Code Bash tool may suggest one in its default commit-message template — ignore it. `Co-Authored-By` is semantic authorship attribution under git/GitHub convention; the tool is the facilitator, not a co-author.
+- NEVER commit `.claude/memory/` — it is built from real prompts and is user data
+- NEVER add a `Co-Authored-By` trailer to user commits unless this project's
+  `.claude/settings.json` has `attribution.commit` set (#2078). The Bash tool
+  suggests one in its default commit template — ignore it. That trailer is
+  semantic authorship attribution under git/GitHub convention; the tool is the
+  facilitator, not a co-author.
 - Keep files under 500 lines
 - Validate input at system boundaries
 
-## Self-scorecard (run after every task, without being asked)
+## Layout
+
+| Path | What it is |
+|---|---|
+| `bin/harness.js` | the `rcskills` CLI: install, doctor, uninstall, and every tool |
+| `.claude/helpers/learning-hook.cjs` | every hook mode: `core`, `recall`, `loop`, `switch` |
+| `hooks/hooks.json` | how the plugin wires those modes (uses `${CLAUDE_PLUGIN_ROOT}`) |
+| `tools/` | the libraries and their tests, side by side |
+| `skills/` | the skills, linted like code |
+| `scripts/plugin-smoke.sh` | installs this checkout as a real plugin and proves each hook |
+
+## Verify before claiming
+
+```bash
+npm run verify
+```
+
+`tsc` typecheck, `npm run lint:skills` (frontmatter, triggers, links, encoding,
+credentials), then `node --test`. All of it must pass before saying anything works.
+
+CI runs that on Linux and Windows × Node 18/20/22, plus: an install smoke test
+that executes the installed hooks and requires their output, a tarball check, the
+README's `npx … spend` one-liner fetched from GitHub on three OSes, and
+`plugin-smoke.sh` on three OSes.
+
+Two rules that cost this project real time:
+
+- **Prove a hook by its output, never by its exit code.** Claude Code runs Windows
+  hooks through Git Bash, where a `cmd /c` hook silently does nothing and exits 0.
+  Hook commands must be shell-neutral: `node "path/with/forward/slashes" mode`.
+- **`set -e` is ignored at the top level of a Bash tool command.** Never gate a
+  commit or push on it — use explicit `|| exit 1`, or require `fail 0` in captured
+  output.
+
+## Self-scorecard (run after every non-trivial task, without being asked)
 
 ```bash
 npm run scorecard -- score --title "what I did" --scopeFit 8 --scopeFit-why "reason"
@@ -20,8 +63,8 @@ npm run scorecard -- trend
 ```
 
 Seven parameters weighted to 100. Four — correctness, verification, durability,
-efficiency — are **evidence-gated** and cap at 5/10 without real measurement, no
-matter what I claim. Durability reads the transcript, so shipping code without
+efficiency — are evidence-gated and cap at 5/10 without real measurement, no
+matter what is claimed. Durability reads the transcript, so shipping code without
 tests or docs shows up in the same turn.
 
 Report the score honestly even when bad, name the **weakest parameter** and why,
@@ -46,10 +89,10 @@ code the change touches and trace the real flow first.
 Never trade away trust-boundary validation, data-loss handling, security or
 accessibility to shorten code. This is a reuse ladder, not code golf.
 
-The cheapest token is the one never generated; this compounds with model-tier
-routing below, which only makes the remaining work cheaper.
+The cheapest token is the one never generated; this compounds with the routing
+below, which only makes the remaining work cheaper.
 
-## Model-Tier Routing (token cost control)
+## Model-tier routing
 
 Pick the cheapest model that can do the task correctly. Check any prompt with
 `npm run route -- "<prompt>"`.
@@ -61,232 +104,44 @@ Pick the cheapest model that can do the task correctly. Check any prompt with
 | `/model sonnet` suggestion | Tell the user in one sentence; the session model is theirs to change |
 | no line | Handle inline |
 
-- `delegate -> haiku` fires only on clear cheap evidence (router score -2 or lower) **and** when it actually pays: a subagent carries ~56k tokens of fixed context, so it only beats inline work in long sessions (on Opus a 2-call edit pays past ~335k tokens, ~99k if a subagent ran in the last 5 minutes; ~18% at 411k, priced from measured subagent runs; a loss in a fresh session).
+- `delegate -> haiku` fires only on clear cheap evidence (router score -2 or lower)
+  **and** when it pays: a subagent carries ~56k tokens of fixed context, so it only
+  beats inline work in long sessions (on Opus a 2-call edit pays past ~335k tokens,
+  ~99k if a subagent ran in the last 5 minutes; a loss in a fresh session).
 - Stay inline only if the brief would need this conversation's history.
 - Never downgrade an ambiguous task: vague work orders ("make it better") are not small.
 - Never route to older model versions: they cost the same or more and are weaker.
-- `npm run backtest` reports routing accuracy and how often routed turns were actually delegated.
-
-Verify with `npm test` before claiming any of this works.
+- `npm run backtest` reports routing accuracy and how often routed turns were
+  actually delegated.
 
 ## Memory (fixed core + bounded recall)
 
 Two tiers, both capped so neither can bloat context.
 
-**Fixed core** — injected into *every* session at SessionStart, unconditionally,
-capped at 400 tokens. It carries standing policy across model swaps and context
-resets, so a fresh session is never blank.
+**Fixed core** — injected into *every* session at SessionStart, capped at 400
+tokens. It carries standing policy across model swaps and context resets.
 
 - Pinned records are always core (`npm run mem -- add "..." --pin`).
-- A record retrieved 5+ times that reaches full strength graduates into core on
-  its own evidence. The core curates itself; do not hand-pin what usage proves.
+- A record retrieved 5+ times that reaches full strength graduates into core on its
+  own evidence. The core curates itself; do not hand-pin what usage proves.
 
 **Per-prompt recall** — BM25-ranked, capped at 350 tokens, silent when nothing
-scores. Do not dump memory into context. Query it, and let it return only what fits.
+scores. Query it; do not dump memory into context.
 
 ```bash
 npm run mem -- recall "<what you need to know>" --budget 400
 npm run mem -- add "<durable fact worth keeping>" [--pin]
 ```
 
-- Recall is BM25-ranked and capped by a token budget, so it can never bloat the
-  prompt no matter how large the store grows.
-- Memories decay on an exponential half-life and strengthen each time they are
-  retrieved. Unused ones prune themselves; `--pin` exempts a fact from decay.
-- Pin only standing policy. Let everything else earn its place through use.
+Memories decay on an exponential half-life and strengthen when retrieved. Unused
+ones prune themselves; `--pin` exempts a fact from decay. Pin only standing policy.
 
-Recall before starting non-trivial work; add a fact when a session produces
-durable knowledge that the code itself does not already state.
+Recall before starting non-trivial work; add a fact when a session produces durable
+knowledge the code does not already state. A project's memory lives under
+`~/.claude/token-harness`, never in the repo.
 
-## Ruflo Capability Brain & Implementation Loop
+## Prices
 
-Ruflo is the coordination ledger and policy decision point. Claude Code is the
-executor: after a Ruflo coordination call, continue implementing the task.
-
-When it is registered, call
-`guidance_brain({ mode: "recommend", task: "..." })` before complex Ruflo
-work. Use its live registry instead of guessing tool names. Treat
-`registered`, `configured`, `reachable`, `healthy`, and `authorized`
-as separate facts. If the brain is unavailable, continue with the compatible
-`guidance_recommend` tool, CLI discovery, and repository instructions.
-
-Follow the returned loop:
-
-1. Recall memory and ADR constraints.
-2. Inspect source, runtime, dependencies, policy, and health.
-3. Route to the smallest capable topology, agents, skills, and tools.
-4. Plan acceptance criteria, safety envelope, ownership, and validation.
-5. Execute in isolated scopes; the coding agent performs the work.
-6. Test focused, regression, and failure paths.
-7. Validate types, security, policy, compatibility, and artifacts.
-8. Benchmark a source-bound candidate against a source-bound baseline.
-9. Optimize measured bottlenecks without weakening safety.
-10. Bind claims and evidence to exact source/build receipts.
-11. Reconcile concurrent handoffs and disclose limitations.
-12. Publish only through a separately authorized release gate.
-
-### Concurrency and authority
-
-- Never allow two writers in one worktree; give each writing agent an isolated
-  worktree and explicit file ownership.
-- Read-only research may run concurrently and report findings to the owner.
-- Only the integration owner edits shared manifests and lockfiles or reconciles
-  overlapping changes.
-- A child may drop capabilities but cannot add tools, network, secrets, spend,
-  concurrency, namespaces, or delegation depth.
-- A lease or claim coordinates ownership; it does not authorize a side effect.
-- Darwin, Flywheel, MetaHarness, memory, and neural systems may propose or
-  evaluate candidates but cannot self-promote or expand their SafetyEnvelope.
-- Bind tests, benchmarks, policy decisions, and release evidence to an exact
-  commit or immutable dirty-worktree snapshot.
-
-## Agent Comms (SendMessage-First Coordination)
-
-Named agents coordinate via `SendMessage`, not polling or shared state.
-
-```
-Lead (you) ←→ architect ←→ developer ←→ tester ←→ reviewer
-              (named agents message each other directly)
-```
-
-### Spawning a Coordinated Team
-
-```javascript
-// ALL agents in ONE message, each knows WHO to message next
-Agent({ prompt: "Research the codebase. SendMessage findings to 'architect'.",
-  subagent_type: "researcher", name: "researcher", run_in_background: true })
-Agent({ prompt: "Wait for 'researcher'. Design solution. SendMessage to 'coder'.",
-  subagent_type: "system-architect", name: "architect", run_in_background: true })
-Agent({ prompt: "Wait for 'architect'. Implement it. SendMessage to 'tester'.",
-  subagent_type: "coder", name: "coder", run_in_background: true })
-Agent({ prompt: "Wait for 'coder'. Write tests. SendMessage results to 'reviewer'.",
-  subagent_type: "tester", name: "tester", run_in_background: true })
-Agent({ prompt: "Wait for 'tester'. Review code quality and security.",
-  subagent_type: "reviewer", name: "reviewer", run_in_background: true })
-
-// Kick off the pipeline
-SendMessage({ to: "researcher", summary: "Start", message: "[task context]" })
-```
-
-### Patterns
-
-| Pattern | Flow | Use When |
-|---------|------|----------|
-| **Pipeline** | A → B → C → D | Sequential dependencies (feature dev) |
-| **Fan-out** | Lead → A, B, C → Lead | Independent parallel work (research) |
-| **Supervisor** | Lead ↔ workers | Ongoing coordination (complex refactor) |
-
-### Rules
-
-- ALWAYS name agents — `name: "role"` makes them addressable
-- ALWAYS include comms instructions in prompts — who to message, what to send
-- Spawn ALL agents in ONE message with `run_in_background: true`
-- After spawning, continue independent local work; wait only when a dependency
-  genuinely blocks progress
-- Do not poll repeatedly — agents message back or complete automatically
-- Give every writing agent an isolated worktree and a non-overlapping file scope
-
-## Swarm & Routing
-
-### Config
-- **Topology**: hierarchical-mesh (anti-drift)
-- **Max Agents**: 15
-- **Memory**: hybrid
-- **HNSW**: Enabled
-- **Neural**: Enabled
-
-```bash
-npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --strategy specialized
-```
-
-### Agent Routing
-
-| Task | Agents | Topology |
-|------|--------|----------|
-| Bug Fix | researcher, coder, tester | hierarchical |
-| Feature | architect, coder, tester, reviewer | hierarchical |
-| Refactor | architect, coder, reviewer | hierarchical |
-| Performance | perf-engineer, coder | hierarchical |
-| Security | security-architect, auditor | hierarchical |
-
-### When to Swarm
-- **YES**: 3+ files, new features, cross-module refactoring, API changes, security, performance
-- **NO**: single file edits, 1-2 line fixes, docs updates, config changes, questions
-
-### 3-Tier Model Routing
-
-| Tier | Handler | Use Cases |
-|------|---------|-----------|
-| 1 | Agent Booster (WASM) | Simple transforms — skip LLM, use Edit directly |
-| 2 | Haiku | Simple tasks, low complexity |
-| 3 | Sonnet/Opus | Architecture, security, complex reasoning |
-
-## Memory & Learning
-
-### Before Any Task
-```bash
-npx @claude-flow/cli@latest memory search --query "[task keywords]" --namespace patterns
-npx @claude-flow/cli@latest hooks route --task "[task description]"
-```
-
-### After Success
-```bash
-npx @claude-flow/cli@latest memory store --namespace patterns --key "[name]" --value "[what worked]"
-npx @claude-flow/cli@latest hooks post-task --task-id "[id]" --success true --store-results true
-```
-
-### MCP Tools (use `ToolSearch("keyword")` to discover)
-
-| Category | Key Tools |
-|----------|-----------|
-| **Memory** | `memory_store`, `memory_search`, `memory_search_unified` |
-| **Bridge** | `memory_import_claude`, `memory_bridge_status` |
-| **Swarm** | `swarm_init`, `swarm_status`, `swarm_health` |
-| **Agents** | `agent_spawn`, `agent_list`, `agent_status` |
-| **Hooks** | `hooks_route`, `hooks_post-task`, `hooks_worker-dispatch` |
-| **Security** | `aidefence_scan`, `aidefence_is_safe`, `aidefence_has_pii` |
-| **Hive-Mind** | `hive-mind_init`, `hive-mind_consensus`, `hive-mind_spawn` |
-
-### Background Workers
-
-| Worker | When |
-|--------|------|
-| `audit` | After security changes |
-| `optimize` | After performance work |
-| `testgaps` | After adding features |
-| `map` | Every 5+ file changes |
-| `document` | After API changes |
-
-```bash
-npx @claude-flow/cli@latest hooks worker dispatch --trigger audit
-```
-
-## Agents
-
-**Core**: `coder`, `reviewer`, `tester`, `planner`, `researcher`
-**Architecture**: `system-architect`, `backend-dev`, `mobile-dev`
-**Security**: `security-architect`, `security-auditor`
-**Performance**: `performance-engineer`, `perf-analyzer`
-**Coordination**: `hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`
-**GitHub**: `pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`
-
-Any string works as a custom agent type.
-
-## Build & Test
-
-- ALWAYS run tests after code changes
-- ALWAYS verify build succeeds before committing
-
-```bash
-npm run build && npm test
-```
-
-## Ruflo CLI
-
-`npx ruflo <command> --help` — 26 commands. Run `ruflo doctor --fix` if the MCP
-server misbehaves. The background `daemon` is optional and spawns headless
-`claude` sessions on an interval, so it burns tokens continuously; leave it off
-unless you want those sweeps.
-
-**Agent tool** executes (files, code, git). **MCP tools** coordinate (swarm,
-memory, hooks).
+`tools/model-router/cost.cjs` holds Anthropic's list prices and context windows.
+It is the single source of truth for every dollar figure the harness prints. When
+prices change, edit that table and the date in its comment — nothing else.

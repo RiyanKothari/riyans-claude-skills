@@ -37,8 +37,7 @@
     "backtest": "node tools/outcome/cli.cjs backtest",
     "seed": "node tools/outcome/cli.cjs seed",
     "lint:skills": "node tools/skill-lint/cli.cjs",
-    "verify": "npm run typecheck && npm run lint:skills && npm test",
-    "score": "npx ruflo metaharness score"
+    "verify": "npm run typecheck && npm run lint:skills && npm test"
   },
   "keywords": [
     "claude-code",
@@ -51,7 +50,6 @@
   ],
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "metaharness": "^0.4.16",
     "typescript": "^5.7.2"
   },
   "engines": {
