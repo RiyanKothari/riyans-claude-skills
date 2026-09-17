@@ -156,7 +156,7 @@ test('the summary says in words what was avoidable, and invites only first-time 
   const r = analyzeRecords([req(0, { write: 400000 }), req(3 * 60 * MIN, { write: 400000 })]);
   const text = formatSummary(r);
   assert.match(text, /Nothing is sent anywhere/);
-  assert.match(text, /\$3\.44 \(\d+\.\d%\) re-sent a whole cached session after a break, 1 times/);
+  assert.match(text, /\$3\.44 \(\d+\.\d%\) re-sent a whole cached session after a break, once./);
   assert.match(text, /Pro or Max plan/);
   assert.doesNotMatch(text, /plugin install/);
   assert.match(formatSummary(r, { invite: true }), /claude plugin install rcskills@riyans-claude-skills/);
@@ -177,4 +177,10 @@ test('run with no transcripts, it names the folder it looked in and how to point
   } finally {
     fs.rmSync(empty, { recursive: true, force: true });
   }
+});
+
+test('the summary counts one session and one break in words', () => {
+  const text = formatSummary(analyzeRecords([req(0, { write: 400000 }), req(3 * 60 * MIN, { write: 400000 })]));
+  assert.match(text, / 1 session, 2 requests: /);
+  assert.match(text, /after a break, once\./);
 });

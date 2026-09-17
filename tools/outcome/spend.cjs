@@ -301,12 +301,12 @@ function formatSummary(report, opts = {}) {
   const lines = [
     'Claude Code spend, read from your local transcripts. Nothing is sent anywhere.',
     '',
-    `  ${report.sessions} sessions, ${report.requests} requests: ${money(total)} at API list price`,
+    `  ${report.sessions} session${report.sessions === 1 ? '' : 's'}, ${report.requests} requests: ${money(total)} at API list price`,
     `  ${share(u.read)} went on re-reading context Claude already had cached.`,
   ];
   if (report.avoidable.n) {
     lines.push(
-      `  ${money(report.avoidable.usd)} (${share(report.avoidable.usd)}) re-sent a whole cached session after a break, ${report.avoidable.n} times.`,
+      `  ${money(report.avoidable.usd)} (${share(report.avoidable.usd)}) re-sent a whole cached session after a break, ${report.avoidable.n === 1 ? 'once' : `${report.avoidable.n} times`}.`,
       '  Running /compact or /clear before stepping away would have saved that.',
     );
   } else {
