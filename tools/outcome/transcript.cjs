@@ -187,8 +187,14 @@ function isCompactBoundary(line) {
   }
 }
 
+/**
+ * A session's context size, from fields another program wrote. `|| 0` passes a
+ * string or a NaN straight through, and every dollar figure downstream — the
+ * [cache] line a user reads most often — would come out as NaN.
+ */
 function usageTokens(u) {
-  return (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+  const num = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : 0);
+  return num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens);
 }
 
 const COMMITTED = /\bgit\b[^\n|;&]*\b(commit|push)\b/;

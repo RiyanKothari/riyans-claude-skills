@@ -1,5 +1,7 @@
 # Riyan's Claude Skills
 
+[![verify](https://github.com/RiyanKothari/riyans-claude-skills/actions/workflows/verify.yml/badge.svg)](https://github.com/RiyanKothari/riyans-claude-skills/actions/workflows/verify.yml)
+
 Claude Code skills and hooks that cut what a session costs, and make Claude prove
 its work. Every rule was measured on real sessions (2,944 requests, $886) or earned
 from something that broke.
@@ -317,7 +319,7 @@ prices each prompt against the session's real context and stays silent otherwise
 
 ```bash
 npm install --include=dev   # .npmrc omits dev deps so plugin installs download nothing
-npm run verify        # typecheck + skill lint + 353 tests
+npm run verify        # typecheck + skill lint + 355 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```

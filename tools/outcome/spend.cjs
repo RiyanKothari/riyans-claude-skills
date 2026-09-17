@@ -86,6 +86,16 @@ function newReport() {
  * New content (one huge tool result, say) is written for the first time either way,
  * so only the part of a write that the previous request had cached counts.
  */
+/**
+ * A usage field as a number. Transcripts are files on disk written by another
+ * program: a truncated line, a null, or a field a future version spells
+ * differently must not turn the headline total into $NaN.
+ */
+function num(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 function walkRequests(records) {
   const seen = new Set();
   const requests = [];
@@ -111,13 +121,13 @@ function walkRequests(records) {
     const p = cost.rate(r.message.model);
     if (!p) return;
 
-    const created = u.cache_creation_input_tokens || 0;
-    const oneHour = Math.min(created, (u.cache_creation && u.cache_creation.ephemeral_1h_input_tokens) || 0);
+    const created = num(u.cache_creation_input_tokens);
+    const oneHour = Math.min(created, num(u.cache_creation && u.cache_creation.ephemeral_1h_input_tokens));
     const writeUsd = ((created - oneHour) * p.in * cost.CACHE_WRITE_5M + oneHour * p.in * cost.CACHE_WRITE_1H) / 1e6;
     requests.push({ i, model: r.message.model, usage: u, rate: p, writeUsd });
 
     const at = Date.parse(r.timestamp) || 0;
-    const context = created + (u.cache_read_input_tokens || 0) + (u.input_tokens || 0);
+    const context = created + num(u.cache_read_input_tokens) + num(u.input_tokens);
     const rewritten = prev ? created - Math.max(0, context - prev.context) : 0;
     if (prev && rewritten >= REWRITE_MIN_TOKENS) {
       const idleMs = at && prev.at ? at - prev.at : 0;
@@ -168,10 +178,10 @@ function analyzeRecords(records, report = newReport()) {
   for (const q of requests) {
     const u = q.usage;
     report.requests++;
-    report.usd.read += ((u.cache_read_input_tokens || 0) * cost.cacheReadRate(q.model)) / 1e6;
+    report.usd.read += (num(u.cache_read_input_tokens) * cost.cacheReadRate(q.model)) / 1e6;
     report.usd.write += q.writeUsd;
-    report.usd.fresh += ((u.input_tokens || 0) * q.rate.in) / 1e6;
-    report.usd.out += ((u.output_tokens || 0) * q.rate.out) / 1e6;
+    report.usd.fresh += (num(u.input_tokens) * q.rate.in) / 1e6;
+    report.usd.out += (num(u.output_tokens) * q.rate.out) / 1e6;
   }
   for (const ev of rewrites) {
     report.rewrites[ev.cause].n++;

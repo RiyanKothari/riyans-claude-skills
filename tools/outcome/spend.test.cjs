@@ -5,6 +5,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { analyzeRecords, classifyRewrites, formatReport, formatSummary } = require('./spend.cjs');
 
 const T0 = Date.parse('2026-09-16T10:00:00Z');
@@ -183,4 +184,25 @@ test('the summary counts one session and one break in words', () => {
   const text = formatSummary(analyzeRecords([req(0, { write: 400000 }), req(3 * 60 * MIN, { write: 400000 })]));
   assert.match(text, / 1 session, 2 requests: /);
   assert.match(text, /after a break, once\./);
+});
+
+test('a damaged transcript still produces a number, never $NaN', () => {
+  // The first thing a stranger runs is `npx … spend`. One malformed usage field
+  // used to print "$NaN at API list price" across the whole headline.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spend-junk-'));
+  fs.mkdirSync(path.join(dir, 'projects', 'p'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'projects', 'p', 's.jsonl'), [
+    'not json at all',
+    '{"type":"assistant"}',
+    JSON.stringify({ type: 'assistant', requestId: 'a', timestamp: '2026-09-16T10:00:00Z', message: { model: 'claude-opus-5', usage: { input_tokens: 'lots', cache_read_input_tokens: null, output_tokens: 5 } } }),
+    JSON.stringify({ type: 'assistant', requestId: 'b', timestamp: 'bogus', message: { model: 'claude-opus-5', usage: { input_tokens: 10, cache_creation_input_tokens: 400000, cache_creation: { ephemeral_1h_input_tokens: 400000 }, output_tokens: 5 } } }),
+  ].join('\n') + '\n');
+
+  const out = spawnSync(process.execPath, [path.join(__dirname, 'spend.cjs')], {
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
+  }).stdout;
+  assert.doesNotMatch(out, /NaN/, out);
+  assert.match(out, /\$4\.00 at API list price/, out);
+  fs.rmSync(dir, { recursive: true, force: true });
 });

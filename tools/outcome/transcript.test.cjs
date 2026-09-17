@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { parseTranscript, lastTurn, isHumanPrompt } = require('./transcript.cjs');
+const { parseTranscript, lastTurn, isHumanPrompt, lastContextUsage } = require('./transcript.cjs');
 const { backtest } = require('./backtest.cjs');
 
 function humanLine(promptId, text) {
@@ -190,4 +190,26 @@ test('transcripts are looked for under CLAUDE_CONFIG_DIR when it is set', () => 
   assert.strictEqual(where({ CLAUDE_CONFIG_DIR: custom }), path.join(custom, 'projects'));
   const home = path.join(os.tmpdir(), 'home');
   assert.strictEqual(where({ CLAUDE_CONFIG_DIR: '', USERPROFILE: home, HOME: home }), path.join(home, '.claude', 'projects'));
+});
+
+test('a usage field that is not a number reads as zero, never NaN', () => {
+  // Transcripts are written by another program. `|| 0` lets a string through, and
+  // every price derived from it — including the [cache] line — becomes "$NaN".
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-junk-'));
+  const tp = path.join(dir, 't.jsonl');
+  fs.writeFileSync(tp, `${JSON.stringify({
+    type: 'assistant',
+    timestamp: new Date().toISOString(),
+    message: {
+      model: 'claude-opus-5',
+      content: [{ type: 'text', text: 'ok' }],
+      usage: { input_tokens: 'lots', cache_read_input_tokens: null, cache_creation_input_tokens: 1000 },
+    },
+  })}\n`);
+
+  const u = lastContextUsage(tp);
+  assert.ok(u, 'the record is found');
+  assert.ok(Number.isFinite(u.tokens), `got ${u.tokens}`);
+  assert.strictEqual(u.tokens, 1000, 'the readable field still counts');
+  fs.rmSync(dir, { recursive: true, force: true });
 });
