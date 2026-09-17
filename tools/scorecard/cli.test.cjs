@@ -199,3 +199,18 @@ test('a change is pinned by a test that names it, or names what requires it', ()
   // hook is named outright; guard is what the named entry point requires.
   assert.deepStrictEqual(untested.sort(), ['tools/deep.cjs', 'tools/lonely.cjs']);
 });
+
+test('turn evidence carries the file count efficiency is judged against', () => {
+  // The allowance is max(tier floor, 4 per distinct file). If this field ever
+  // stopped being reported, every large turn would silently fall back to the tier
+  // floor and score 0 again — which is exactly the bug it was added to fix.
+  const p = projects();
+  const mine = p.put('C--work-harness', 'sess-files', [
+    human('touch a few files'),
+    wrote('/w/a.cjs'), wrote('/w/b.cjs'), wrote('/w/a.cjs'), wrote('/w/c.test.cjs'),
+  ]);
+  const ev = gatherTurnEvidence(mine, '/w');
+  assert.strictEqual(ev.distinctFiles, 3, 'the same file twice is one file');
+  assert.strictEqual(ev.toolCount, 4, 'but both calls still cost');
+  p.clean();
+});
