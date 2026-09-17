@@ -180,3 +180,14 @@ test('a long transcript is read from its tail, never whole', () => {
     fs.unlinkSync(p);
   }
 });
+
+test('transcripts are looked for under CLAUDE_CONFIG_DIR when it is set', () => {
+  const { execFileSync } = require('node:child_process');
+  const where = (env) => execFileSync(process.execPath,
+    ['-e', "process.stdout.write(require('./transcript.cjs').PROJECTS_DIR)"],
+    { cwd: __dirname, env: { ...process.env, ...env }, encoding: 'utf8' });
+  const custom = path.join(os.tmpdir(), 'claude-config');
+  assert.strictEqual(where({ CLAUDE_CONFIG_DIR: custom }), path.join(custom, 'projects'));
+  const home = path.join(os.tmpdir(), 'home');
+  assert.strictEqual(where({ CLAUDE_CONFIG_DIR: '', USERPROFILE: home, HOME: home }), path.join(home, '.claude', 'projects'));
+});
