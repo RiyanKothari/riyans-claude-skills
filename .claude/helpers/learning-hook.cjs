@@ -478,6 +478,31 @@ function coreTexts() {
 }
 
 /**
+ * One line, once, on the first session after installing.
+ *
+ * Everything else here stays silent until there is money on the table, so a fresh
+ * install says nothing for hours and reads as broken. The marker is written first:
+ * if it cannot be recorded, say nothing rather than risk repeating it every session.
+ */
+function firstRunLine() {
+  const home = GLOBAL ? path.join(os.homedir(), '.claude', 'token-harness') : DATA;
+  const marker = path.join(home, 'first-run.json');
+  if (fs.existsSync(marker)) return null;
+  try {
+    fs.mkdirSync(path.dirname(marker), { recursive: true });
+    fs.writeFileSync(marker, JSON.stringify({ at: Date.now() }), 'utf8');
+  } catch {
+    return null;
+  }
+  return (
+    '[rcskills] Installed. You will get a line before this session\'s prompt cache lapses, ' +
+    'when context grows expensive enough to /compact, and when small work should go to a ' +
+    'cheaper model — and nothing at all when there is nothing worth saying. It reads only ' +
+    'local transcripts; nothing leaves this machine. What past sessions cost: rcskills spend'
+  );
+}
+
+/**
  * SessionStart. The fixed core: the same bounded block every new session gets,
  * regardless of what is asked. Pinned records are the standing policy that must
  * survive a model swap or a context reset.
@@ -485,6 +510,9 @@ function coreTexts() {
 function modeCore() {
   const input = parseInput();
   const out = [];
+
+  const greeting = firstRunLine();
+  if (greeting) out.push(greeting);
 
   const core = coreTexts();
   if (core.length) out.push(`[core] ${core.join(' | ')}`);

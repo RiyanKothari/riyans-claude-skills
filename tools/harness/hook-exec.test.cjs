@@ -139,6 +139,41 @@ test('global mode never writes project data into the project working tree', () =
   fs.rmSync(home, { recursive: true, force: true });
 });
 
+test('a new install says one line on its first session, and nothing after that', () => {
+  // Everything else here speaks only when there is money on the table, so without
+  // this line a fresh install is silent for hours and reads as broken.
+  // A stand-in harness repo with an empty store, so this machine's own pinned
+  // memory cannot stand in for the greeting.
+  const harness = fs.mkdtempSync(path.join(os.tmpdir(), 'fresh-install-'));
+  fs.mkdirSync(path.join(harness, '.claude', 'helpers'), { recursive: true });
+  fs.mkdirSync(path.join(harness, 'tools', 'memory'), { recursive: true });
+  const hook = path.join(harness, '.claude', 'helpers', 'learning-hook.cjs');
+  fs.copyFileSync(HOOK, hook);
+  fs.copyFileSync(path.join(ROOT, 'tools', 'memory', 'store.cjs'), path.join(harness, 'tools', 'memory', 'store.cjs'));
+
+  const dir = sandbox();
+  const { home, env } = fakeHome();
+  const quiet = JSON.stringify({ context_tokens: 1000 });
+
+  const first = runHook(hook, ['core', '--global'], dir, quiet, env);
+  assert.match(first.stdout, /^\[rcskills\] Installed\./);
+  assert.match(first.stdout, /rcskills spend/, 'points at the one command worth running now');
+
+  assert.strictEqual(
+    runHook(hook, ['core', '--global'], dir, quiet, env).stdout.trim(),
+    '',
+    'silent from then on — which is what a new user would otherwise see from the start',
+  );
+  const other = sandbox();
+  assert.strictEqual(
+    runHook(hook, ['core', '--global'], other, quiet, env).stdout.trim(),
+    '',
+    'once per install, not once per project',
+  );
+
+  for (const d of [harness, dir, other, home]) fs.rmSync(d, { recursive: true, force: true });
+});
+
 test('pinned policy in the harness store reaches every project', () => {
   // Build a stand-in harness repo so the test never depends on real memory.
   const harness = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-harness-'));

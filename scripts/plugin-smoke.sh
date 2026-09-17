@@ -52,7 +52,13 @@ OUT="$(run_hook UserPromptSubmit "$(input s1)")"
 echo "UserPromptSubmit: $OUT"
 echo "$OUT" | grep -q '250k tokens cached.*re-sends it all (~\$1\.50)' || fail "no [cache] notice priced for Sonnet 4.5"
 
-run_hook SessionStart "$(input s2)" >/dev/null
+# A new install has nothing to say until something costs money, so the first
+# session must say so once — otherwise it reads as broken — and never again.
+OUT="$(run_hook SessionStart "$(input s2)")"
+echo "$OUT" | grep -q '^\[rcskills\] Installed\.' || fail "no first-run line on the first session: $OUT"
+OUT="$(run_hook SessionStart "$(input s2b)")"
+! echo "$OUT" | grep -q '^\[rcskills\] Installed\.' || fail "first-run line repeated"
+
 run_hook Stop "$(input s3)" >/dev/null
 run_hook PreModelSwitch "$(input s4)" >/dev/null
 

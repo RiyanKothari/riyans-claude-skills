@@ -190,3 +190,12 @@ test('--global installs where Claude Code reads user settings, including CLAUDE_
     else process.env.CLAUDE_CONFIG_DIR = saved;
   }
 });
+
+test('uninstall survives a hand-edited hooks block that is not an array', () => {
+  // settings.json is a file users edit. Throwing here would leave the hooks wired
+  // with no way to remove them but by hand.
+  const settings = { hooks: { SessionStart: { type: 'command' }, Stop: [{ [MARKER]: 'loop', hooks: [] }] } };
+  assert.strictEqual(removeHooks(settings), 1);
+  assert.deepStrictEqual(settings.hooks.SessionStart, { type: 'command' }, 'left exactly as found');
+  assert.ok(!settings.hooks.Stop, 'ours is gone');
+});

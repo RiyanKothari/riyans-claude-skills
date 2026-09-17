@@ -145,6 +145,32 @@ jobs:
           echo "$OUT" | grep -q '\$2\.06 (.*) re-sent a whole cached session after a break, once\.'
           echo "$OUT" | grep -q 'claude plugin install rcskills@riyans-claude-skills'
 
+  install-from-github:
+    # The README's own two commands, against what is on GitHub right now. The
+    # local-path install below cannot catch a marketplace entry that only resolves
+    # from a checkout, and this is the path every stranger actually takes.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install -g @anthropic-ai/claude-code
+      - name: install from the marketplace and prove the first session speaks
+        shell: bash
+        env:
+          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/cfg
+        run: |
+          claude plugin marketplace add "$GITHUB_REPOSITORY"
+          claude plugin install rcskills@riyans-claude-skills
+          HOOKS="$(find "$CLAUDE_CONFIG_DIR" -path '*rcskills*' -name hooks.json | head -1)"
+          [ -n "$HOOKS" ] || { echo "nothing installed"; exit 1; }
+          export CLAUDE_PLUGIN_ROOT="$(dirname "$(dirname "$HOOKS")")"
+          CMD="$(node -p "require('$HOOKS').hooks.SessionStart[0].hooks[0].command")"
+          OUT="$(echo '{"session_id":"s1","source":"startup"}' | bash -c "$CMD")"
+          echo "$OUT"
+          echo "$OUT" | grep -q '^\[rcskills\] Installed\.'
+
   plugin-smoke:
     # The recommended install, run for real: Claude Code installs this checkout as a
     # plugin into a throwaway config (no login needed), then every hook is run the

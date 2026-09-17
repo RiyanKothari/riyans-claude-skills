@@ -43,6 +43,38 @@ function statePath(dir) {
   return path.join(dir, 'harness-state.json');
 }
 
+/**
+ * The plugin install, which keeps no state file of ours: Claude Code copies the
+ * repo into its own cache and wires hooks/hooks.json itself. Running from that
+ * copy is the certain signal; otherwise look for it under the config directory.
+ * Without this, `rcskills doctor` reports a healthy plugin install as three
+ * failures, because every check it knows about belongs to the settings install.
+ */
+function pluginInstall() {
+  if (fs.existsSync(path.join(REPO, 'hooks', 'hooks.json')) && /[\\/]plugins[\\/]/.test(REPO)) return REPO;
+  const root = path.join(claudeDir(true), 'plugins');
+  const found = [];
+  const walk = (d, depth) => {
+    if (found.length || depth > 5) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    if (entries.some((e) => e.name === '.claude-plugin') && fs.existsSync(path.join(d, 'hooks', 'hooks.json'))) {
+      const manifest = readJson(path.join(d, '.claude-plugin', 'plugin.json'), {});
+      if (manifest.name === 'rcskills') {
+        found.push(d);
+        return;
+      }
+    }
+    for (const e of entries) if (e.isDirectory()) walk(path.join(d, e.name), depth + 1);
+  };
+  walk(root, 0);
+  return found[0] || null;
+}
+
 function readJson(p, fallback) {
   try {
     // A UTF-8 BOM makes JSON.parse throw. Silently falling back would treat a
@@ -147,6 +179,8 @@ function removeHooks(settings) {
   if (!settings.hooks) return 0;
   let removed = 0;
   for (const event of Object.keys(settings.hooks)) {
+    // A hand-edited settings.json can hold anything; uninstall must not throw on it.
+    if (!Array.isArray(settings.hooks[event])) continue;
     const before = settings.hooks[event].length;
     settings.hooks[event] = settings.hooks[event].filter((g) => !g || !g[MARKER]);
     removed += before - settings.hooks[event].length;
@@ -238,6 +272,21 @@ function doctor(opts) {
 
   const check = (name, ok, detail) => checks.push({ name, ok: Boolean(ok), detail });
 
+  const plugin = pluginInstall();
+  if (plugin && !state) {
+    check('plugin install', true, plugin);
+    check('hooks wired', fs.existsSync(path.join(plugin, 'hooks', 'hooks.json')), 'hooks/hooks.json');
+    check(
+      'skill installed',
+      fs.existsSync(path.join(plugin, 'skills', 'token-harness', 'SKILL.md')),
+      path.join(plugin, 'skills'),
+    );
+    check('subagents installed', fs.existsSync(path.join(plugin, 'agents', 'rc-haiku.md')), 'rcskills:rc-* agents');
+    check('hook script present', fs.existsSync(path.join(plugin, '.claude', 'helpers', 'learning-hook.cjs')), 'learning-hook.cjs');
+    check('node >= 18', Number(process.versions.node.split('.')[0]) >= 18, process.version);
+    return report(checks, 'the plugin manages this install; `rcskills install` is not needed');
+  }
+
   check('state file', state, statePath(dir));
   check(
     'skill installed',
@@ -264,6 +313,12 @@ function doctor(opts) {
   check('hooks wired', wired >= expected, `${wired} found, ${expected} expected`);
   check('node >= 18', Number(process.versions.node.split('.')[0]) >= 18, process.version);
 
+  // Installed both ways on purpose or by accident, the plugin copy stands down,
+  // so say which one is actually speaking.
+  return report(checks, plugin ? `also installed as a plugin (${plugin}); its hooks stand down so nothing is doubled` : null);
+}
+
+function report(checks, note) {
   let bad = 0;
   for (const c of checks) {
     if (!c.ok) bad++;
@@ -271,6 +326,7 @@ function doctor(opts) {
   }
 
   console.log(bad ? `\n${bad} check(s) failed — run install again to repair` : '\nall checks passed');
+  if (note) console.log(note);
   process.exitCode = bad ? 1 : 0;
 }
 
@@ -355,11 +411,15 @@ function usage() {
     console.log(`  ${k.padEnd(9)} ${v.desc}`);
   }
   console.log('\n--global installs to ~/.claude (or CLAUDE_CONFIG_DIR) instead of ./.claude');
+  console.log('--version prints the installed version');
 }
 
 function main() {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
+  if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
+    return console.log(readJson(path.join(REPO, 'package.json'), {}).version || 'unknown');
+  }
   if (TOOLS[cmd]) return runTool(cmd, argv.slice(1));
   const pi = argv.indexOf('--profile');
   const opts = {
@@ -382,5 +442,5 @@ function main() {
 main();
 
 module.exports = {
-  PROFILES, HOOK_SPEC, addHooks, removeHooks, hookCommand, readSettings, claudeDir, MARKER,
+  PROFILES, HOOK_SPEC, addHooks, removeHooks, hookCommand, readSettings, claudeDir, pluginInstall, MARKER,
 };

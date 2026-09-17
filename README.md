@@ -63,8 +63,14 @@ hooks cost no model tokens. `rcskills` is on Claude's shell PATH, so you can ask
 Claude to run any command below.
 
 Cost notices work on every Claude model from Opus 4 and Sonnet 4 on, including
-Bedrock and Vertex model ids, at each model's list price. A release newer than the
-price table is priced as its family's newest model until the table catches up.
+Bedrock and Vertex model ids, at each model's Anthropic list price. A release newer
+than the price table is priced as its family's newest model until the table catches
+up. Some Bedrock and Vertex regions charge above list, so on those the real figure
+is a little higher than the one shown.
+
+After a session or two, `rcskills doctor` reports what is installed and where —
+it knows the plugin install and the settings install apart, and says which one is
+speaking if you have both.
 
 To remove it: `claude plugin uninstall rcskills@riyans-claude-skills`. Your memory
 and scorecards stay in `~/.claude/token-harness`.
@@ -88,6 +94,7 @@ ways, the plugin's hooks stand down so nothing runs twice.
 
 | When | Line | What to do |
 |---|---|---|
+| The first session after installing | `[rcskills] Installed.` and what it will say | Nothing. It is the only unprompted line you get |
 | A large session, before stepping away | `367k tokens cached. Reply within 30 min to keep it cheap…` | Reply soon, or `/compact` first |
 | After a turn that re-sent cached context | `The last turn re-sent 306k already-cached tokens (~$3.06) because…` | Follow the fix it names |
 | Context worth compacting | `[context]` line, relayed as a one-sentence `/compact` suggestion | Compact at the next break |
@@ -310,7 +317,7 @@ prices each prompt against the session's real context and stays silent otherwise
 
 ```bash
 npm install --include=dev   # .npmrc omits dev deps so plugin installs download nothing
-npm run verify        # typecheck + skill lint + 338 tests
+npm run verify        # typecheck + skill lint + 353 tests
 npm run lint:skills   # validate every SKILL.md on its own
 npm run coverage      # ~94%
 ```
@@ -319,8 +326,11 @@ CI runs the suite on Ubuntu and Windows across Node 18/20/22, plus an install
 smoke test that asserts a pre-existing config survives installation. It also runs
 the `npx github:… spend` one-liner above exactly as a stranger would, fetched from
 GitHub with no checkout, on Linux, macOS and Windows under Node 18 and 22, and
-requires the exact dollar figure for a sample transcript. And it installs the plugin with the real `claude plugin` commands on all three
-systems and runs every hook the way Claude Code does ([scripts/plugin-smoke.sh](scripts/plugin-smoke.sh)).
+requires the exact dollar figure for a sample transcript. It installs the plugin
+with the real `claude plugin` commands on all three systems and runs every hook the
+way Claude Code does ([scripts/plugin-smoke.sh](scripts/plugin-smoke.sh)). Finally
+it runs the two install commands at the top of this README against what is on
+GitHub at that moment, and requires the first session to speak.
 
 ## License
 

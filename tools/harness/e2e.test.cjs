@@ -18,12 +18,15 @@ function sandbox(settingsContent) {
   return dir;
 }
 
-function run(dir, args) {
+function run(dir, args, extraEnv = {}) {
   try {
     const stdout = execFileSync(process.execPath, [HARNESS, ...args], {
       cwd: dir,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      // An empty config dir by default: whether this machine has the plugin
+      // installed must not change what these tests see.
+      env: { ...process.env, CLAUDE_CONFIG_DIR: path.join(dir, 'empty-config'), ...extraEnv },
     });
     return { code: 0, stdout, stderr: '' };
   } catch (e) {
@@ -158,6 +161,48 @@ test('doctor passes on a fresh install and fails when nothing is installed', () 
   cleanup(dir);
 });
 
+/** The layout `claude plugin install` leaves behind, with this repo's real files. */
+function pluginSandbox() {
+  const dir = sandbox();
+  const root = path.join(dir, 'cfg', 'plugins', 'cache', 'riyans-claude-skills', 'rcskills', '1.1.0');
+  const REPO = path.join(__dirname, '..', '..');
+  for (const rel of [
+    ['.claude-plugin', 'plugin.json'],
+    ['hooks', 'hooks.json'],
+    ['skills', 'token-harness', 'SKILL.md'],
+    ['agents', 'rc-haiku.md'],
+    ['.claude', 'helpers', 'learning-hook.cjs'],
+  ]) {
+    const dest = path.join(root, ...rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(path.join(REPO, ...rel), dest);
+  }
+  return { dir, cfg: path.join(dir, 'cfg'), root };
+}
+
+test('doctor recognises a plugin install instead of reporting a healthy one as broken', () => {
+  // The plugin keeps no state file of ours, so every settings-install check fails
+  // against it. A user who took the recommended path saw three FAILs and no cause.
+  const { dir, cfg, root } = pluginSandbox();
+  const r = run(dir, ['doctor'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.strictEqual(r.code, 0, r.stdout);
+  assert.match(r.stdout, /ok {2}.*plugin install/);
+  assert.ok(r.stdout.includes(root), r.stdout);
+  assert.doesNotMatch(r.stdout, /FAIL/);
+  assert.match(r.stdout, /`rcskills install` is not needed/);
+  cleanup(dir);
+});
+
+test('doctor on a settings install says the plugin beside it stands down', () => {
+  const { dir, cfg } = pluginSandbox();
+  run(dir, ['install', '--profile', 'standard'], { CLAUDE_CONFIG_DIR: cfg });
+  const r = run(dir, ['doctor'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.strictEqual(r.code, 0, r.stdout);
+  assert.match(r.stdout, /also installed as a plugin/);
+  assert.match(r.stdout, /nothing is doubled/);
+  cleanup(dir);
+});
+
 test('doctor detects hooks removed behind its back', () => {
   const dir = sandbox();
   run(dir, ['install', '--profile', 'strict']);
@@ -237,5 +282,13 @@ test('install then uninstall then install again ends up clean', () => {
   const ours = groups.filter((g) => g && g['riyans-claude-skills']);
   const modes = require('../../bin/harness.js').PROFILES.strict.hooks.length;
   assert.strictEqual(ours.length, modes, 'exactly one hook group per mode');
+  cleanup(dir);
+});
+
+test('--version prints the version the plugin and package agree on', () => {
+  const dir = sandbox();
+  const r = run(dir, ['--version']);
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(r.stdout.trim(), require('../../package.json').version);
   cleanup(dir);
 });
