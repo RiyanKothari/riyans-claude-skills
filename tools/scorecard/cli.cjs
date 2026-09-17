@@ -262,12 +262,65 @@ function gatherTurnEvidence(transcriptPath, cwd = process.cwd()) {
 const TEST_FILE = /\.test\.[cm]?[jt]s$/;
 const SOURCE_FILE = /\.[cm]?[jt]sx?$/;
 
+/** Every source file in the project, by basename. Bounded: node_modules is skipped. */
+function repoIndex(cwd, limit = 4000) {
+  const index = new Map();
+  const walk = (dir) => {
+    if (index.size > limit) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.name === 'node_modules' || e.name === '.git' || e.name === 'coverage') continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (SOURCE_FILE.test(e.name)) {
+        if (!index.has(e.name)) index.set(e.name, []);
+        index.get(e.name).push(p);
+      }
+    }
+  };
+  walk(cwd);
+  return index;
+}
+
+const REQUIRE = /(?:require|from)\(?\s*['"](\.[^'"]+)['"]/g;
+
+/** The files `entry` requires directly, resolved to real paths inside the project. */
+function directRequires(entry) {
+  let body;
+  try {
+    body = fs.readFileSync(entry, 'utf8');
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const [, spec] of body.matchAll(REQUIRE)) {
+    const base = path.resolve(path.dirname(entry), spec);
+    for (const candidate of [base, `${base}.cjs`, `${base}.js`, path.join(base, 'index.cjs')]) {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        out.push(candidate);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Which changed modules no changed test exercises. Durability is whether each change
  * is pinned by a test, not how many test files moved: the old count scored one
  * thorough test of the one module changed below six test files touched in passing.
- * A test exercises a module when it names the module's file. Files outside the
- * project (scratch scripts) and deleted files are not the project's code.
+ * Files outside the project (scratch scripts) and deleted files are not the
+ * project's code.
+ *
+ * A test exercises a module when it names the module's file, or names an entry
+ * point that requires it directly — a hook or CLI test drives its own dependencies,
+ * and scoring only literal name matches reported those changes as untested. One
+ * level, not the whole tree: running a module is not the same as pinning it.
  *
  * @param {string[]} files absolute paths
  * @param {string} cwd
@@ -284,8 +337,18 @@ function testedSources(files, cwd) {
   });
   const sources = files.filter((f) => SOURCE_FILE.test(f) && !TEST_FILE.test(f)
     && !/[\\/]node_modules[\\/]/.test(f) && isInside(f, cwd) && fs.existsSync(f));
+
+  const named = (f) => bodies.some((b) => b.includes(path.basename(f)));
+  const reached = new Set();
+  if (sources.some((s) => !named(s))) {
+    for (const [base, paths] of repoIndex(cwd)) {
+      if (!bodies.some((b) => b.includes(base))) continue;
+      for (const entry of paths) for (const dep of directRequires(entry)) reached.add(dep);
+    }
+  }
+
   const untested = sources
-    .filter((s) => !bodies.some((b) => b.includes(path.basename(s))))
+    .filter((s) => !named(s) && !reached.has(path.resolve(s)))
     .map((s) => path.relative(cwd, s).replace(/\\/g, '/'));
   return { sourcesChanged: sources.length, untested };
 }

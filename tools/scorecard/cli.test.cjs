@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { sessionTranscript, gatherTurnEvidence, pickTestCommand, parsePytestSummary } = require('./cli.cjs');
+const { sessionTranscript, gatherTurnEvidence, pickTestCommand, parsePytestSummary, testedSources } = require('./cli.cjs');
 
 const human = (content) => ({ type: 'user', promptSource: 'sdk', origin: { kind: 'human' }, message: { content } });
 const wrote = (file) => ({
@@ -178,4 +178,24 @@ test('a Python project is found in the root or one directory down, with its own 
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('a change is pinned by a test that names it, or names what requires it', () => {
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'tested-sources-'));
+  const w = (rel, body) => {
+    const p = path.join(proj, rel);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, body);
+    return p;
+  };
+  const hook = w('tools/hook.cjs', "require('./guard.cjs');\n");
+  const guard = w('tools/guard.cjs', "require('./deep.cjs');\n");
+  const deep = w('tools/deep.cjs', 'module.exports = 1;\n');
+  const lonely = w('tools/lonely.cjs', 'module.exports = 2;\n');
+  const spec = w('tools/hook.test.cjs', "spawnSync(node, [path.join(__dirname, 'hook.cjs')]);\n");
+
+  const { sourcesChanged, untested } = testedSources([hook, guard, deep, lonely, spec], proj);
+  assert.strictEqual(sourcesChanged, 4, 'the test file itself is not a source');
+  // hook is named outright; guard is what the named entry point requires.
+  assert.deepStrictEqual(untested.sort(), ['tools/deep.cjs', 'tools/lonely.cjs']);
 });
