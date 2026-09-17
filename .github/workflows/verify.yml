@@ -114,11 +114,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        # Node 18 and 22 bundle different npm majors, and npx is npm.
+        node: ['18', '22']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node }}
       - name: a session re-sent after a 3-hour break
         shell: bash
         run: |
@@ -132,7 +134,10 @@ jobs:
         env:
           CLAUDE_CONFIG_DIR: ${{ runner.temp }}/cfg
         run: |
-          OUT=$(npx --yes "github:${GITHUB_REPOSITORY}#${GITHUB_SHA}" spend)
+          # A short hash: npm 10 fails a github: spec pinned to a full 40-character
+          # hash ("GitFetcher requires an Arborist constructor"), though the README's
+          # unpinned spec, #main and short hashes all work. Found by this job.
+          OUT=$(npx --yes "github:${GITHUB_REPOSITORY}#${GITHUB_SHA::12}" spend)
           echo "$OUT"
           # 400k tokens re-written at Sonnet 4.5's 1-hour rate ($6/M) is $2.40,
           # less a fresh 56k session ($0.34): priced, so the Bedrock id resolved.
