@@ -4,9 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const { classifyTool } = require('./score.cjs');
 
+// Claude Code keeps transcripts under CLAUDE_CONFIG_DIR when it is set.
 const PROJECTS_DIR = path.join(
-  process.env.USERPROFILE || process.env.HOME || '',
-  '.claude',
+  process.env.CLAUDE_CONFIG_DIR || path.join(process.env.USERPROFILE || process.env.HOME || '', '.claude'),
   'projects',
 );
 

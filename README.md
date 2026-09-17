@@ -6,6 +6,25 @@ from something that broke.
 
 MIT licensed. Node 18+. No API key, no daemon, no dependencies.
 
+## See what your sessions cost first
+
+One command, nothing installed, nothing sent anywhere. It reads the transcripts
+Claude Code already keeps on your machine:
+
+```bash
+npx github:RiyanKothari/riyans-claude-skills spend
+```
+
+```
+  11 sessions, 3260 requests: $957.44 at API list price
+  61.4% went on re-reading context Claude already had cached.
+  $138.61 (14.5%) re-sent a whole cached session after a break, 41 times.
+  Running /compact or /clear before stepping away would have saved that.
+```
+
+That is the author's own history. The first run downloads the repo, which takes
+15-35 seconds; reading the transcripts takes about 2.
+
 ## What you get
 
 - **No surprise cache bills.** In a large session Claude's reply ends with how long

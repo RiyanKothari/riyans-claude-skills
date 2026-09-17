@@ -2,7 +2,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { analyzeRecords, classifyRewrites, formatReport } = require('./spend.cjs');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { analyzeRecords, classifyRewrites, formatReport, formatSummary } = require('./spend.cjs');
 
 const T0 = Date.parse('2026-09-16T10:00:00Z');
 const MIN = 60000;
@@ -147,4 +150,31 @@ test('the report explains each rewrite cause and the guard saving', () => {
   assert.match(text, /1 session file\(s\), 2 requests/);
   assert.match(text, /cache expired while idle/);
   assert.match(text, /1 idle rewrites cost \$0\.50\+ over a fresh session: \/compact or \/clear before stepping away saves \$3\.44/);
+});
+
+test('the summary says in words what was avoidable, and invites only first-time npx runs', () => {
+  const r = analyzeRecords([req(0, { write: 400000 }), req(3 * 60 * MIN, { write: 400000 })]);
+  const text = formatSummary(r);
+  assert.match(text, /Nothing is sent anywhere/);
+  assert.match(text, /\$3\.44 \(\d+\.\d%\) re-sent a whole cached session after a break, 1 times/);
+  assert.match(text, /Pro or Max plan/);
+  assert.doesNotMatch(text, /plugin install/);
+  assert.match(formatSummary(r, { invite: true }), /claude plugin install rcskills@riyans-claude-skills/);
+
+  const calm = formatSummary(analyzeRecords([req(0, { write: 60000 }), req(MIN, { read: 60000 })]));
+  assert.match(calm, /nothing avoidable there/);
+});
+
+test('run with no transcripts, it names the folder it looked in and how to point it elsewhere', () => {
+  const { execFileSync } = require('node:child_process');
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'spend-empty-'));
+  try {
+    const out = execFileSync(process.execPath, [path.join(__dirname, 'spend.cjs')], {
+      env: { ...process.env, CLAUDE_CONFIG_DIR: empty }, encoding: 'utf8',
+    });
+    assert.ok(out.includes(path.join(empty, 'projects')), out);
+    assert.match(out, /set CLAUDE_CONFIG_DIR/);
+  } finally {
+    fs.rmSync(empty, { recursive: true, force: true });
+  }
 });

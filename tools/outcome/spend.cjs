@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const cost = require('../model-router/cost.cjs');
-const { findTranscripts } = require('./transcript.cjs');
+const { findTranscripts, PROJECTS_DIR } = require('./transcript.cjs');
 
 /**
  * Where a session's money actually went, from the usage Claude Code records.
@@ -280,6 +280,45 @@ function formatReport(report, top = 12) {
   return lines.join('\n');
 }
 
+const INSTALL = [
+  'claude plugin marketplace add RiyanKothari/riyans-claude-skills',
+  'claude plugin install rcskills@riyans-claude-skills',
+];
+
+/**
+ * The part a first-time reader needs: what went where, and what was avoidable, in
+ * words. Prices are API list prices; on a Pro or Max plan the same tokens come out
+ * of usage limits instead of a bill.
+ *
+ * @param {ReturnType<typeof newReport>} report
+ * @param {{invite?: boolean}} [opts]
+ */
+function formatSummary(report, opts = {}) {
+  const u = report.usd;
+  const total = u.read + u.write + u.fresh + u.out;
+  const money = (x) => `$${x.toFixed(2)}`;
+  const share = (x) => (total ? `${((x / total) * 100).toFixed(1)}%` : '0%');
+  const lines = [
+    'Claude Code spend, read from your local transcripts. Nothing is sent anywhere.',
+    '',
+    `  ${report.sessions} sessions, ${report.requests} requests: ${money(total)} at API list price`,
+    `  ${share(u.read)} went on re-reading context Claude already had cached.`,
+  ];
+  if (report.avoidable.n) {
+    lines.push(
+      `  ${money(report.avoidable.usd)} (${share(report.avoidable.usd)}) re-sent a whole cached session after a break, ${report.avoidable.n} times.`,
+      '  Running /compact or /clear before stepping away would have saved that.',
+    );
+  } else {
+    lines.push('  No break re-sent a large cached session: nothing avoidable there.');
+  }
+  lines.push('  On a Pro or Max plan these are usage limits rather than dollars.');
+  if (opts.invite) {
+    lines.push('', 'To be told before it happens, in Claude Code:', ...INSTALL.map((c) => `  ${c}`));
+  }
+  return lines.join('\n');
+}
+
 if (require.main === module) {
   const args = process.argv.slice(2);
   const i = args.indexOf('--project');
@@ -287,11 +326,19 @@ if (require.main === module) {
   const encoded = filter ? path.resolve(filter).replace(/[^A-Za-z0-9]/g, '-') : '';
   const files = findTranscripts().filter((f) => !encoded || f.includes(encoded));
   if (!files.length) {
-    console.log('No transcripts found.');
+    console.log(`No Claude Code transcripts found in ${PROJECTS_DIR}${filter ? ` for ${filter}` : ''}.`);
+    console.log('If Claude Code keeps its config elsewhere, set CLAUDE_CONFIG_DIR to that folder.');
   } else {
+    if (process.stderr.isTTY && !args.includes('--json')) process.stderr.write(`Reading ${files.length} transcripts...\n`);
     const report = analyzeFiles(files);
-    console.log(args.includes('--json') ? JSON.stringify(report, null, 2) : formatReport(report));
+    if (args.includes('--json')) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      // npx sets npm_command=exec: someone trying this before installing anything.
+      console.log(formatSummary(report, { invite: process.env.npm_command === 'exec' }));
+      console.log(`\nDetail\n\n${formatReport(report)}`);
+    }
   }
 }
 
-module.exports = { analyzeRecords, analyzeFiles, classifyRewrites, formatReport, newReport, REWRITE_MIN_TOKENS };
+module.exports = { analyzeRecords, analyzeFiles, classifyRewrites, formatReport, formatSummary, newReport, REWRITE_MIN_TOKENS };
