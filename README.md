@@ -18,9 +18,9 @@ npx github:RiyanKothari/riyans-claude-skills spend
 ```
 
 ```
-  11 sessions, 3260 requests: $957.44 at API list price
-  61.4% went on re-reading context Claude already had cached.
-  $138.61 (14.5%) re-sent a whole cached session after a break, 41 times.
+  11 sessions, 3559 requests: $1022.37 at API list price
+  61.0% went on re-reading context Claude already had cached.
+  $147.30 (14.4%) re-sent a whole cached session after a break, 44 times.
   Running /compact or /clear before stepping away would have saved that.
 ```
 
