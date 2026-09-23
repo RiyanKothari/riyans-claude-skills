@@ -210,34 +210,50 @@ function routerNote(r, neighbors) {
 }
 
 /**
- * Wording cannot tell moderate work from complex (17 of 29 "moderate" predictions
- * were complex), so Sonnet is suggested from what the session actually did: when the
- * last 6 completed turns on an Opus or Fable session were all small, and at least 3
- * of them real edits or commands, the user hears once per session that a cheaper
- * model would do.
+ * What this session's model costs it, once that is worth interrupting for.
+ *
+ * This used to fire only when the last 6 turns were all small. Replayed over real
+ * transcripts that fired in 1 of 7 sessions, at turn 54, covering 8% of spend —
+ * because small turns are 8% of the bill and complex ones are 82%. Cost per
+ * request is set by context size and the model's rate, so `session-switch.cjs`
+ * measures that instead; all-small recent work now strengthens the message rather
+ * than gating it.
  */
 function modelSwitchNote(activity, input, scoreMod) {
-  if (!activity || !scoreMod || !Array.isArray(activity.recent)) return null;
-  if (!/opus|fable/i.test(String(activity.model || ''))) return null;
-  const last = activity.recent.slice(-6);
-  if (last.length < 6) return null;
-  if (!last.every((t) => ['trivial', 'simple'].includes(scoreMod.actualTier(t)))) return null;
-  if (last.filter((t) => t.edits + t.commands > 0).length < 3) return null;
+  if (!activity) return null;
+  const switchMod = req('model-router/session-switch.cjs');
+  const configMod = req('config.cjs');
+  if (!switchMod || !configMod) return null;
 
-  const sessionId = input.session_id || null;
-  const state = readJsonFile(SWITCH_STATE);
-  if (state && state.sessionId === sessionId) return null;
-  writeJsonFile(SWITCH_STATE, { sessionId, at: Date.now() });
-  // A switch re-caches the whole context on the new model once. It repays itself in
-  // about 13 requests at any size, but costs least right after a compaction.
-  const costMod = req('model-router/cost.cjs');
-  const sonnet = costMod && costMod.rate('claude-sonnet-5');
-  const rewrite = sonnet && activity.tokens >= 150000
-    ? ` Switching re-caches this ${Math.round(activity.tokens / 1000)}k context once (~$${((activity.tokens * sonnet.in * 2) / 1e6).toFixed(2)}), so it is cheapest right after a /compact.`
-    : '';
-  return `[router] The last 6 turns on ${activity.model} were all small work. Tell the user in one sentence that ` +
-    '`/model sonnet` (or `/model opusplan`: Opus to plan, Sonnet to build) would handle a stretch like this for ' +
-    `about 60% less, and \`/model opus\` switches back for hard work.${rewrite}`;
+  // Recent small work is an amplifier, not a gate: it says the session is not
+  // currently doing anything that needs the expensive model.
+  let allSmall = false;
+  let smallCount = 0;
+  if (scoreMod && Array.isArray(activity.recent)) {
+    const last = activity.recent.slice(-6);
+    if (last.length >= 4 && last.every((t) => ['trivial', 'simple'].includes(scoreMod.actualTier(t)))) {
+      allSmall = true;
+      smallCount = last.length;
+    }
+  }
+
+  try {
+    const result = switchMod.adviseSessionSwitch({
+      model: activity.model,
+      tokens: activity.tokens,
+      cacheTtl: activity.cacheTtl,
+      allSmall,
+      smallCount,
+      sessionId: input.session_id || null,
+      state: readJsonFile(SWITCH_STATE),
+      settings: configMod.load().modelSwitch,
+    });
+    if (result.state) writeJsonFile(SWITCH_STATE, result.state);
+    return result.message;
+  } catch {
+    // Price advice is optional; never block the prompt over it.
+    return null;
+  }
 }
 
 /** A redacted summary of this session, which SessionStart shows after /clear. */

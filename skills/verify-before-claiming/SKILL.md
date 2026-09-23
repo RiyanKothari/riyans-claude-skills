@@ -1,6 +1,6 @@
 ---
 name: verify-before-claiming
-description: Discipline for proving work rather than asserting it — running the thing, measuring before optimising, and reporting honestly when results are bad. Use before saying something works, before optimising anything, when reporting a result or score, and whenever tempted to describe intent as outcome.
+description: Discipline for proving work rather than asserting it — running the thing, measuring before optimising, and reporting honestly when results are bad. Use when the user asks whether something works, was tested, or wants honesty; before reporting a score, benchmark or passing suite; before saying a fix is done; whenever a claim is about to outrun its evidence.
 ---
 
 # Verify Before Claiming

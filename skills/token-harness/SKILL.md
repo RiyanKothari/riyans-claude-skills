@@ -1,6 +1,6 @@
 ---
 name: token-harness
-description: Cut Claude Code token cost through model-tier routing, budget-capped memory recall, and evidence-gated self-scoring. Use when API cost matters, when deciding whether to delegate work to a cheaper model, when you need memory that survives across sessions without bloating context, or when auditing what is eating the context window.
+description: Cut Claude Code token cost through model-tier routing, budget-capped memory recall, and evidence-gated self-scoring. Use whenever a [router], [cache] or [context] line appears in the conversation, when the user mentions cost, tokens, spend, context size, caching, /compact or which model to use, or when deciding whether to delegate work to a cheaper model.
 ---
 
 # Token Harness
@@ -40,6 +40,16 @@ orders like "make it better" read short but are not small. Moderate work is neve
 delegated on wording alone, because wording cannot tell it from complex; Sonnet is
 suggested for the session instead, once its recent turns prove small. Older Opus and
 Sonnet versions are never the cheapest adequate choice and are never routed to.
+
+**2b. The session model is the biggest lever, and it is the user's to pull.** Across
+11,709 real requests, 53.8% of spend was cache reads and 25.1% cache writes against
+21.0% for output: a long session mostly pays to re-read itself. Cache reads are billed
+off the model's input rate, so the whole dominant cost falls with it. When a median
+turn on this session's model would cost $0.50 more than on Sonnet, the hook quotes
+both per-request prices, the one-time re-cache and the payback — 9 requests on a
+5-minute cache, 14 on an hour, at any context size, against a median turn of 22.
+Relay it in one sentence and offer `/model opusplan` (plan on Opus, build on Sonnet)
+when the work still needs the stronger model. Never switch the model for the user.
 
 **3. Never dump memory into context.** Query it. Recall is BM25-ranked and hard-
 capped by a token budget, so cost cannot grow with store size. Unused notes decay

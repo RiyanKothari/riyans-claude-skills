@@ -147,7 +147,7 @@ test('the cache guard is on at $0.50 by default, and settable from file, CLI and
   assert.deepStrictEqual(set('cache-guard', '$1.25'), { enabled: true, budgetUsd: 1.25, mode: 'notify' });
   set('compact', 'off');
   assert.deepStrictEqual(load({}).cacheGuard, { enabled: true, budgetUsd: 1.25, mode: 'notify' }, 'other settings keep it');
-  assert.strictEqual(/** @type {{mode: string}} */ (set('cache-guard', 'block')).mode, 'block');
+  assert.strictEqual(/** @type {{mode: string}} */ (/** @type {unknown} */ (set('cache-guard', 'block'))).mode, 'block');
   assert.strictEqual(load({}).cacheGuard.budgetUsd, 1.25, 'switching mode keeps the budget');
   set('cache-guard', 'off');
   assert.strictEqual(load({}).cacheGuard.enabled, false);
@@ -178,5 +178,42 @@ test('outcome learning is off by default, and set or env turns it on', () => {
     if (saved === undefined) delete process.env.TOKEN_HARNESS_CONFIG;
     else process.env.TOKEN_HARNESS_CONFIG = saved;
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('model-switch advice is on by default, and set, env and describe all reach it', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-switch-'));
+  const env = { TOKEN_HARNESS_CONFIG: path.join(dir, 'config.json') };
+  const saved = process.env.TOKEN_HARNESS_CONFIG;
+  process.env.TOKEN_HARNESS_CONFIG = env.TOKEN_HARNESS_CONFIG;
+  try {
+    assert.deepEqual(load(env).modelSwitch, { enabled: true, budgetUsd: 0.5 });
+
+    assert.strictEqual(load({ ...env, TOKEN_HARNESS_MODEL_SWITCH: 'off' }).modelSwitch.enabled, false);
+    assert.strictEqual(load({ ...env, TOKEN_HARNESS_MODEL_SWITCH: '2.50' }).modelSwitch.budgetUsd, 2.5);
+    assert.strictEqual(load({ ...env, TOKEN_HARNESS_MODEL_SWITCH: '$2.50' }).modelSwitch.budgetUsd, 2.5, 'a dollar sign is tolerated');
+
+    set('model-switch', 'off');
+    assert.strictEqual(load(env).modelSwitch.enabled, false);
+    set('model-switch', '1.25');
+    assert.deepEqual(load(env).modelSwitch, { enabled: true, budgetUsd: 1.25 }, 'a budget re-enables it');
+    assert.throws(() => set('model-switch', 'sometimes'), /on, off or a dollar amount/);
+
+    assert.match(describe(load(env)), /model switch:       on/);
+    assert.match(describe(load(env)), /\$1\.25\+ more than on Sonnet/);
+    assert.match(describe(load(env)), /never switches the model for you/);
+  } finally {
+    if (saved === undefined) delete process.env.TOKEN_HARNESS_CONFIG;
+    else process.env.TOKEN_HARNESS_CONFIG = saved;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a damaged modelSwitch block falls back instead of poisoning the advice', () => {
+  const c = withConfig('{"modelSwitch":{"budgetUsd":"free","enabled":"yes please"}}');
+  try {
+    assert.deepEqual(load({}).modelSwitch, { enabled: true, budgetUsd: 0.5 });
+  } finally {
+    c.clean();
   }
 });

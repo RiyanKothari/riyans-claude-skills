@@ -100,6 +100,7 @@ ways, the plugin's hooks stand down so nothing runs twice.
 | A large session, before stepping away | `367k tokens cached. Reply within 30 min to keep it cheap…` | Reply soon, or `/compact` first |
 | After a turn that re-sent cached context | `The last turn re-sent 306k already-cached tokens (~$3.06) because…` | Follow the fix it names |
 | Context worth compacting | `[context]` line, relayed as a one-sentence `/compact` suggestion | Compact at the next break |
+| A long session on an expensive model | What it costs per request, what Sonnet costs, and the payback in requests | `/model sonnet`, or `/model opusplan` to keep planning on Opus |
 | `/model` re-selecting the model already in use | A confirmation, with the re-cache price | Cancel unless you meant it |
 | A new session after `/clear` | `[last session 2h ago]` recent asks, files and last reply | Nothing: Claude has the thread |
 

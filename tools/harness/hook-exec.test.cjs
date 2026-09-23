@@ -223,3 +223,44 @@ test('the Stop hook records the turn only when learning is on, in the same proce
   assert.strictEqual(outcomes(), 1, 'plugin: rcskills config learning on');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('a long session on an expensive model hears what it costs, once, from the real hook', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'switch-hook-'));
+  const { home, env } = fakeHome();
+  const transcript = (model) => {
+    const tp = path.join(dir, `${model}.jsonl`);
+    fs.writeFileSync(tp, [
+      { type: 'user', origin: { kind: 'human' }, message: { content: 'explain the router' } },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: {
+          model,
+          usage: { input_tokens: 10, cache_read_input_tokens: 200000, cache_creation_input_tokens: 0, output_tokens: 300 },
+          content: [{ type: 'text', text: 'It routes.' }],
+        },
+      },
+    ].map((l) => JSON.stringify(l)).join('\n') + '\n');
+    return tp;
+  };
+  const recall = (tp, session) => runHook(HOOK, ['recall'], dir, JSON.stringify({
+    prompt: 'now explain the memory store', transcript_path: tp, session_id: session,
+  }), { ...env, TOKEN_HARNESS_MODEL_SWITCH: '' }).stdout;
+
+  const opus = transcript('claude-opus-5');
+  const first = recall(opus, 'long-opus');
+  assert.match(first, /\[router\] This session is on claude-opus-5 at 200k context/);
+  assert.match(first, /\/model sonnet/);
+  assert.match(first, /repays in \d+ requests/);
+  assert.doesNotMatch(recall(opus, 'long-opus'), /This session is on/, 'the same session is not told twice');
+
+  assert.doesNotMatch(recall(transcript('claude-sonnet-5'), 'long-sonnet'), /This session is on/, 'nothing to say on Sonnet');
+  assert.doesNotMatch(
+    runHook(HOOK, ['recall'], dir, JSON.stringify({ prompt: 'x', transcript_path: opus, session_id: 'off' }),
+      { ...env, TOKEN_HARNESS_MODEL_SWITCH: 'off' }).stdout,
+    /This session is on/,
+    'rcskills config model-switch off silences it',
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(home, { recursive: true, force: true });
+});

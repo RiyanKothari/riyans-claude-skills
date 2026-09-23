@@ -74,9 +74,11 @@ test('a fresh session is not told to delegate, because it would cost more', () =
   s.clean();
 });
 
-test('a vague work order gets no routing line', () => {
+test('a vague work order is never delegated or escalated', () => {
+  // A long Opus session may still hear what its model costs; that line is about the
+  // session, not this prompt, so only delegation is ruled out here.
   const s = session([human('earlier'), usage('claude-opus-5')]);
-  assert.doesNotMatch(recall(s, 'make it better'), /\[router\]/);
+  assert.doesNotMatch(recall(s, 'make it better'), /\[router\] (delegate|escalate)/);
   s.clean();
 });
 
@@ -98,12 +100,17 @@ test('a stretch of proven small work on opus suggests /model sonnet, once', () =
   s.clean();
 });
 
-test('mixed work on opus does not suggest switching', () => {
+test('mixed work on opus hears the price, but is never called small', () => {
+  // This test used to require silence here. Replayed over real sessions, that rule
+  // fired in 1 of 7 at turn 54: complex turns are 82% of spend, and what a request
+  // costs is set by context and model, not by how small the last turn was.
   const lines = [];
   for (let i = 0; i < 5; i++) lines.push(human(`small change ${i}`), edit(`/src/file${i}.js`));
   lines.push(human('big change'), ...[1, 2, 3, 4, 5].map((n) => edit(`/src/big${n}.js`)));
   lines.push(usage('claude-opus-5'));
   const s = session(lines);
-  assert.doesNotMatch(recall(s, 'next'), /\/model sonnet/);
+  const out = recall(s, 'next');
+  assert.match(out, /\/model sonnet/);
+  assert.doesNotMatch(out, /all small work/, 'a session with real work in it is not described as small');
   s.clean();
 });
