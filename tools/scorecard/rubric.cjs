@@ -144,6 +144,11 @@ function score(input = {}) {
 
     let value = auto !== undefined ? auto : clamp(manual);
     let capped = false;
+    // The three judgement parameters have no evidence to derive them from, so leaving them
+    // off the command line silently scored them zero: 36 of 100 points, with nothing saying
+    // so. They still score zero - answering is the point - but the card now says which
+    // question went unanswered rather than presenting it as a failure that was measured.
+    const assessed = auto !== undefined || manual !== undefined;
 
     if (p.evidence && !backed && value > UNBACKED_CAP) {
       value = UNBACKED_CAP;
@@ -162,6 +167,10 @@ function score(input = {}) {
       lost: Number((p.weight - earned).toFixed(2)),
       backed,
       capped,
+      assessed,
+      // A judgement parameter is answered on the command line; an evidence one is earned
+      // by running something. Both can be missing, but they are not the same miss.
+      judged: !p.evidence,
       asks: p.asks,
       note: (input.notes && input.notes[p.key]) || null,
     });
@@ -188,10 +197,19 @@ function formatCard(result, title) {
   lines.push('| Parameter | Score | Weight | Lost |');
   lines.push('|---|---:|---:|---:|');
   for (const b of result.breakdown) {
-    const flag = b.capped ? ' (capped: no evidence)' : '';
+    let flag = '';
+    if (b.capped) flag = ' (capped: no evidence)';
+    else if (!b.assessed) flag = b.judged ? ' (not assessed)' : ' (not measured)';
     lines.push(`| ${b.label}${flag} | ${b.value}/10 | ${b.weight} | -${b.lost} |`);
   }
   lines.push('');
+  const unanswered = result.breakdown.filter((b) => b.judged && !b.assessed);
+  if (unanswered.length) {
+    const cost = unanswered.reduce((n, b) => n + b.weight, 0);
+    lines.push(`Unanswered: ${unanswered.map((b) => b.key).join(', ')} — worth ${cost} points, scored as zero. `
+      + `Answer them: ${unanswered.map((b) => `--${b.key} N --${b.key}-why "..."`).join(' ')}`);
+    lines.push('');
+  }
   if (result.weakest) {
     lines.push(`**Weakest: ${result.weakest.label}** (-${result.weakest.lost} points)`);
     lines.push(`Ask: ${result.weakest.asks}`);

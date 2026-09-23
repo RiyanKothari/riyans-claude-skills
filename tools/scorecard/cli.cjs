@@ -32,6 +32,36 @@ function hasPytestConfig(dir) {
   return Boolean(setupCfg && /^\[tool:pytest\]/m.test(setupCfg));
 }
 
+/** Whether this interpreter can measure coverage. A missing plugin is a normal answer, not an error. */
+function hasPytestCov(file) {
+  try {
+    execFileSync(file, ['-c', 'import pytest_cov'], { stdio: 'ignore', timeout: 15000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What to measure coverage of: the project's own packages, not its tests.
+ *
+ * A bare `--cov` measures everything imported, and test files are 100% covered by
+ * definition — it reported 91% where the package alone was 87%. A flattering number
+ * is worse than none.
+ */
+function coverageArgs(dir) {
+  let packages = [];
+  try {
+    packages = fs.readdirSync(dir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'tests'
+        && fs.existsSync(path.join(dir, d.name, '__init__.py')))
+      .map((d) => `--cov=${d.name}`);
+  } catch {
+    // Unreadable directory: fall through to measuring everything.
+  }
+  return (packages.length ? packages : ['--cov']).concat('--cov-report=term');
+}
+
 /** The project's venv interpreter if it has one, otherwise whatever `python` is on PATH. */
 function pythonFor(dir, platform) {
   const rel = platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
@@ -77,7 +107,13 @@ function pickTestCommand(dir = process.cwd(), platform = process.platform) {
   }
   const project = candidates.find(hasPytestConfig);
   if (project) {
-    return { runner: 'pytest', file: pythonFor(project, platform), args: ['-m', 'pytest'], cwd: project };
+    const file = pythonFor(project, platform);
+    // A Python suite scored verification 7/10 at 87% coverage, because only the node
+    // branch ever measured coverage. pytest-cov has to be asked for, and asking for it
+    // when it is absent makes pytest exit on an unrecognised argument - which would
+    // close the evidence gates entirely - so it is checked for first.
+    const args = ['-m', 'pytest'].concat(hasPytestCov(file) ? coverageArgs(project) : []);
+    return { runner: 'pytest', file, args, cwd: project };
   }
 
   // Nothing to run, so the evidence gates stay closed.
@@ -146,6 +182,8 @@ function gatherEvidence() {
       out = `${e.stdout || ''}${e.stderr || ''}`;
     }
     const counts = parsePytestSummary(out);
+    const pyCov = out.match(/^TOTAL\s+\d+\s+\d+\s+([\d.]+)%/m);
+    if (pyCov) ev.coveragePct = Number(pyCov[1]);
     // Only a suite that actually ran tests opens the gates: a missing
     // interpreter, or "no tests ran", measured nothing.
     if (counts && counts.testsTotal > 0) {
@@ -261,10 +299,17 @@ function gatherTurnEvidence(transcriptPath, cwd = process.cwd()) {
   return out;
 }
 
-const TEST_FILE = /\.test\.[cm]?[jt]s$/;
-const SOURCE_FILE = /\.[cm]?[jt]sx?$/;
+// `.test.tsx` matched neither pattern as a test and matched SOURCE_FILE as a source, so a React
+// test file was counted as one more untested module: adding a test made durability worse. Python
+// was invisible to both, so a backend turn's changes were never weighed at all.
+const TEST_FILE = /(?:\.(?:test|spec)\.[cm]?[jt]sx?|(?:^|[\\/])(?:test_[^\\/]+|[^\\/]+_test)\.py)$/;
+const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|py)$/;
 
-/** Every source file in the project, by basename. Bounded: node_modules is skipped. */
+// Indexing a virtualenv's site-packages would fill the basename index with other people's code
+// before reaching the project's own.
+const SKIP_DIRS = new Set(['node_modules', '.git', 'coverage', '.venv', 'venv', '__pycache__', 'dist', 'build']);
+
+/** Every source file in the project, by basename. Bounded: dependency directories are skipped. */
 function repoIndex(cwd, limit = 4000) {
   const index = new Map();
   const walk = (dir) => {
@@ -276,7 +321,7 @@ function repoIndex(cwd, limit = 4000) {
       return;
     }
     for (const e of entries) {
-      if (e.name === 'node_modules' || e.name === '.git' || e.name === 'coverage') continue;
+      if (SKIP_DIRS.has(e.name)) continue;
       const p = path.join(dir, e.name);
       if (e.isDirectory()) walk(p);
       else if (SOURCE_FILE.test(e.name)) {
@@ -302,7 +347,11 @@ function directRequires(entry) {
   const out = [];
   for (const [, spec] of body.matchAll(REQUIRE)) {
     const base = path.resolve(path.dirname(entry), spec);
-    for (const candidate of [base, `${base}.cjs`, `${base}.js`, path.join(base, 'index.cjs')]) {
+    // TypeScript and ESM imports carry no extension, so a test importing './ReviewsPage'
+    // resolved to nothing and the module it pins was reported as untested.
+    const candidates = [base];
+    for (const ext of EXTENSIONS) candidates.push(`${base}${ext}`, path.join(base, `index${ext}`));
+    for (const candidate of candidates) {
       if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
         out.push(candidate);
         break;
@@ -310,6 +359,32 @@ function directRequires(entry) {
     }
   }
   return out;
+}
+
+const EXTENSIONS = ['.cjs', '.js', '.mjs', '.ts', '.tsx', '.jsx'];
+
+/**
+ * The dotted module paths a Python file answers to, e.g. `precedent/bq.py` inside a package
+ * becomes `precedent.bq`. Python tests import by module path, never by filename, so matching
+ * on the basename alone never credited them.
+ */
+function pythonModules(file) {
+  if (!file.endsWith('.py')) return [];
+  const parts = [path.basename(file, '.py')];
+  let dir = path.dirname(file);
+  while (fs.existsSync(path.join(dir, '__init__.py'))) {
+    parts.unshift(path.basename(dir));
+    dir = path.dirname(dir);
+  }
+  const dotted = [];
+  for (let i = 0; i < parts.length; i += 1) dotted.push(parts.slice(i).join('.'));
+  return dotted;
+}
+
+/** Whether a test body imports this Python module, by dotted path or by relative import. */
+function importsPython(body, file) {
+  return pythonModules(file).some((m) => new RegExp(`(?:import|from)\\s+\\.*${m.replace(/\./g, '\\.')}\\b`).test(body)
+    || new RegExp(`from\\s+\\.*[\\w.]*\\b${m.replace(/\./g, '\\.')}\\s+import\\b`).test(body));
 }
 
 /**
@@ -330,7 +405,8 @@ function directRequires(entry) {
  */
 function testedSources(files, cwd) {
   const { isInside } = require('../paths.cjs');
-  const bodies = files.filter((f) => TEST_FILE.test(f)).map((t) => {
+  const tests = files.filter((f) => TEST_FILE.test(f));
+  const bodies = tests.map((t) => {
     try {
       return fs.readFileSync(t, 'utf8');
     } catch {
@@ -340,7 +416,12 @@ function testedSources(files, cwd) {
   const sources = files.filter((f) => SOURCE_FILE.test(f) && !TEST_FILE.test(f)
     && !/[\\/]node_modules[\\/]/.test(f) && isInside(f, cwd) && fs.existsSync(f));
 
-  const named = (f) => bodies.some((b) => b.includes(path.basename(f)));
+  // What the changed tests import directly: the surest evidence that a change is pinned.
+  const imported = new Set();
+  for (const t of tests) for (const dep of directRequires(t)) imported.add(path.resolve(dep));
+
+  const named = (f) => imported.has(path.resolve(f))
+    || bodies.some((b) => b.includes(path.basename(f)) || importsPython(b, f));
   const reached = new Set();
   if (sources.some((s) => !named(s))) {
     for (const [base, paths] of repoIndex(cwd)) {
@@ -485,4 +566,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { sessionTranscript, gatherTurnEvidence, testedSources, pickTestCommand, parsePytestSummary };
+module.exports = { sessionTranscript, gatherTurnEvidence, testedSources, pickTestCommand, parsePytestSummary, coverageArgs };

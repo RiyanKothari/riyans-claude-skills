@@ -214,3 +214,23 @@ test('durability rewards pinning each changed module, not touching many test fil
   // Docs-only turns keep the file count.
   assert.strictEqual(d({ testsAdded: 0, docsUpdated: true, sourcesChanged: 0, untested: [] }), 4);
 });
+
+test('a question left unanswered is named, not passed off as a measured failure', () => {
+  // scopeFit, honesty and completeness have no evidence to derive them from, so omitting
+  // them scored 36 points of zeroes with nothing saying why. They still score zero.
+  const card = formatCard(score({ evidence: { testsPass: 5, testsTotal: 5 } }), 'T');
+  assert.match(card, /Scope fit \(not assessed\)/);
+  assert.match(card, /Unanswered: scopeFit, honesty, completeness — worth 36 points, scored as zero/);
+  assert.match(card, /Verification \(not measured\)/, 'an unearned evidence parameter is a different miss');
+  assert.match(card, /--scopeFit N --scopeFit-why/);
+
+  const answered = formatCard(score({ scopeFit: 8, honesty: 9, completeness: 7 }), 'T');
+  assert.doesNotMatch(answered, /Unanswered/);
+  assert.doesNotMatch(answered, /not assessed/);
+});
+
+test('an answered zero is still a zero, and says so as a score not an omission', () => {
+  const card = formatCard(score({ scopeFit: 0, honesty: 0, completeness: 0 }), 'T');
+  assert.doesNotMatch(card, /not assessed/, 'zero was chosen, not skipped');
+  assert.match(card, /\| Scope fit \| 0\/10 \|/);
+});

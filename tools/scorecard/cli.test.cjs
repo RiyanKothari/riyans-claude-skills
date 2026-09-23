@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { sessionTranscript, gatherTurnEvidence, pickTestCommand, parsePytestSummary, testedSources } = require('./cli.cjs');
+const { sessionTranscript, gatherTurnEvidence, pickTestCommand, parsePytestSummary, testedSources, coverageArgs } = require('./cli.cjs');
 
 const human = (content) => ({ type: 'user', promptSource: 'sdk', origin: { kind: 'human' }, message: { content } });
 const wrote = (file) => ({
@@ -213,4 +213,67 @@ test('turn evidence carries the file count efficiency is judged against', () => 
   assert.strictEqual(ev.distinctFiles, 3, 'the same file twice is one file');
   assert.strictEqual(ev.toolCount, 4, 'but both calls still cost');
   p.clean();
+});
+
+test('a React test file is a test, not one more untested source', () => {
+  // `.test.tsx` matched neither the test pattern nor a require, so writing a test for a
+  // component made durability worse: the test counted as a second unpinned module.
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'tested-tsx-'));
+  const w = (rel, body) => {
+    const p = path.join(proj, rel);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, body);
+    return p;
+  };
+  const page = w('src/pages/ReviewsPage.tsx', 'export function ReviewsPage() { return null }\n');
+  const spec = w('src/pages/ReviewsPage.test.tsx', "import { ReviewsPage } from './ReviewsPage'\n");
+  const other = w('src/pages/TrialPage.tsx', 'export function TrialPage() { return null }\n');
+
+  const { sourcesChanged, untested } = testedSources([page, spec, other], proj);
+  assert.strictEqual(sourcesChanged, 2, 'the .test.tsx file is not a source');
+  assert.deepStrictEqual(untested, ['src/pages/TrialPage.tsx'], 'the extensionless import still pins the page');
+});
+
+test('a Python change is pinned by the test that imports its module', () => {
+  // Python was invisible to both patterns, so a backend turn's changes were never weighed.
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'tested-py-'));
+  const w = (rel, body) => {
+    const p = path.join(proj, rel);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, body);
+    return p;
+  };
+  w('precedent/__init__.py', '');
+  const mod = w('precedent/bq.py', 'class BigQueryCasebook: pass\n');
+  const untouched = w('precedent/trial.py', 'def score_run(): pass\n');
+  const spec = w('tests/test_bq.py', 'from precedent.bq import BigQueryCasebook\n');
+
+  const { sourcesChanged, untested } = testedSources([mod, untouched, spec], proj);
+  assert.strictEqual(sourcesChanged, 2, 'test_bq.py is a test, not a source');
+  assert.deepStrictEqual(untested, ['precedent/trial.py']);
+});
+
+test('pytest is asked for coverage only when the plugin is there', () => {
+  // Asking for --cov without pytest-cov makes pytest exit on an unrecognised argument,
+  // which would close every evidence gate instead of opening one.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pytest-cov-'));
+  fs.writeFileSync(path.join(root, 'pyproject.toml'), '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n');
+  const picked = /** @type {any} */ (pickTestCommand(root));
+  assert.strictEqual(picked.runner, 'pytest');
+  // No interpreter here can import pytest_cov, so the plain command is the safe answer.
+  assert.deepStrictEqual(picked.args, ['-m', 'pytest']);
+});
+
+test('coverage measures the project packages, not its own tests', () => {
+  // A bare --cov counts test files, which are 100% covered by definition: it read 91%
+  // where the package alone was 87%.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cov-target-'));
+  fs.mkdirSync(path.join(root, 'precedent'));
+  fs.mkdirSync(path.join(root, 'tests'));
+  fs.writeFileSync(path.join(root, 'precedent', '__init__.py'), '');
+  fs.writeFileSync(path.join(root, 'tests', '__init__.py'), '');
+  assert.deepStrictEqual(coverageArgs(root), ['--cov=precedent', '--cov-report=term']);
+
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'cov-bare-'));
+  assert.deepStrictEqual(coverageArgs(bare), ['--cov', '--cov-report=term'], 'no package: measure everything');
 });
