@@ -50,7 +50,7 @@ input() { node -p 'JSON.stringify({ session_id: process.argv[1], source: "startu
 
 OUT="$(run_hook UserPromptSubmit "$(input s1)")"
 echo "UserPromptSubmit: $OUT"
-echo "$OUT" | grep -q '250k tokens cached.*re-sends it all (~\$1\.50)' || fail "no [cache] notice priced for Sonnet 4.5"
+echo "$OUT" | grep -q 'to keep 250k cached.*~\$1\.50 to re-send' || fail "no cache notice priced for Sonnet 4.5: $OUT"
 
 # A new install has nothing to say until something costs money, so the first
 # session must say so once — otherwise it reads as broken — and never again.
