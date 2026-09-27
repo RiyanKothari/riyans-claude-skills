@@ -97,9 +97,9 @@ ways, the plugin's hooks stand down so nothing runs twice.
 | When | Line | What to do |
 |---|---|---|
 | The first session after installing | `[rcskills] Installed.` and what it will say | Nothing. It is the only unprompted line you get |
-| A large session, before stepping away | `367k tokens cached. Reply within 30 min to keep it cheap…` | Reply soon, or `/compact` first |
-| After a turn that re-sent cached context | `The last turn re-sent 306k already-cached tokens (~$3.06) because…` | Follow the fix it names |
-| Context worth compacting | `[context]` line, relayed as a one-sentence `/compact` suggestion | Compact at the next break |
+| A large session, before stepping away | `Next: reply within 30 min to keep 367k cached, or /compact before stepping away…` | Reply soon, or `/compact` first |
+| After a message that re-sent cached context | `The last message re-sent 306k cached tokens (~$3.06) because…` | Follow the fix it names |
+| Context worth compacting | `Next: /compact keep … — 360k of context, $0.18 per message to re-read.` | Run it |
 | An Opus session doing small work | The next messages can run on Sonnet, with the per-request prices | `/compact` first, then `/model sonnet` |
 | A Sonnet session about to start work that needs Opus | The message is held once, with the reason | `/model opus` and send it again, or send it again as is |
 | The first prompt after changing model family | `[handoff]`: the reasoning, open tasks and files the old model left | Nothing: Claude continues from it |
@@ -192,9 +192,9 @@ out per session rather than fixed. It is the lower of two limits:
 The result is then brought forward (x0.75) when the last turn reached a natural
 break (committed, pushed, or just answered), pushed back (x1.5) when it left edits
 uncommitted, and brought forward again (x0.8) when context is growing more than
-50k per message. Once past that point the next message carries a `[context]` line
-naming the point and why, asking Claude to suggest `/compact` to you. It repeats
-only after another 100k of growth, and resets once you compact.
+50k per message. Once past that point the next reply ends with a finished
+`/compact keep …` line naming the work in hand and what each message costs. It
+repeats only after another 100k of growth, and resets once you compact.
 
 ```bash
 rcskills config                         # show current settings
@@ -215,8 +215,8 @@ So in a session where that would cost $0.50+ more than a fresh one, Claude ends 
 reply with:
 
 ```
-367k tokens cached. Reply within 30 min to keep it cheap; after that your next message
-re-sends it all (~$3.67). Stepping away? /compact first, or /clear (~$0.56, keeps a summary).
+Next: reply within 30 min to keep 367k cached, or /compact before stepping away
+(later: ~$3.67 to re-send; /clear ~$0.56).
 ```
 
 It repeats at most every 15 minutes unless the context grows by 100k, and stays out
@@ -224,9 +224,12 @@ of the way when a `/compact` suggestion is already due. After any turn that paid
 re-send cached context, the next reply says what caused it and how to avoid it:
 
 ```
-The last turn re-sent 306k already-cached tokens (~$3.06) because the cache lapsed
-after 4h 54m idle. Fix: run /compact before stepping away.
+The last message re-sent 306k cached tokens (~$3.06) because the cache lapsed after
+4h 54m idle. Next time: run /compact before stepping away.
 ```
+
+Every one of these arrives as a finished line Claude copies, never a sentence it has
+to compose, and a reply carries at most one: two due at once are joined.
 
 The line goes through Claude's reply because the desktop app does not display a Stop
 hook's `systemMessage`. The first version used one; it ran, and nothing appeared.

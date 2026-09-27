@@ -4,6 +4,7 @@ const { DEFAULTS } = require('../config.cjs');
 const cost = require('./cost.cjs');
 const { classify, modelFamily, HARD_SIGNALS } = require('./index.cjs');
 const { actualTier } = require('../outcome/score.cjs');
+const { relay, modelDownLine, modelUpLine } = require('../next-command.cjs');
 
 const DEFAULT_SETTINGS = DEFAULTS.modelSwitch;
 
@@ -37,8 +38,6 @@ const SMALL_RUN = 3;
 const WORK_ORDER = /\b(add|build|implement|create|make|design|architect|plan|planning|measure|integrate|refactor|rewrite|migrate|set ?up|develop|improve|optimi[sz]e|redesign|port|convert|automate|research|audit|investigate|increase|reduce)\b/i;
 
 const SMALL = new Set(['trivial', 'simple']);
-const k = (n) => `${Math.round(n / 1000)}k`;
-const usd = (n) => (n >= 10 ? n.toFixed(0) : n.toFixed(2));
 const clip = (s, n) => {
   const t = String(s || '').replace(/\s+/g, ' ').trim();
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
@@ -173,15 +172,11 @@ function adviseSessionSwitch(input = {}) {
   if (pred.want === 'sonnet') {
     const econ = switchEconomics(input);
     if (!econ || econ.savedPerRequest * MEDIAN_TURN_REQUESTS < s.budgetUsd) return quiet;
-    const focus = clip(input.prompt, 60);
-    const afterCompact = switchEconomics({ ...input, tokens: Math.min(Number(input.tokens), 40000) });
-    const message = `[router] Model: the next messages can run on Sonnet — ${pred.why}. `
-      + `At the end of your reply, tell the user in two short lines: this session re-reads ${k(Number(input.tokens))} `
-      + `at about $${usd(econ.perRequestUsd)} per request on ${econ.from} against $${usd(econ.targetPerRequestUsd)} on Sonnet; `
-      + `to keep the reasoning, run \`/compact keep the decisions, open tasks and reasoning for: ${focus}\` while still on Opus `
-      + `(Opus writes the summary, and the re-cache drops from ~$${usd(econ.recacheUsd)} to ~$${usd(afterCompact ? afterCompact.recacheUsd : econ.recacheUsd)}), `
-      + 'then `/model sonnet`. They will be told before the next job that needs Opus. '
-      + 'The session model is theirs to change; do not switch it for them.';
+    // Compacting first, while still on Opus, keeps the reasoning: Opus writes the
+    // summary, and the one-time re-cache on Sonnet is charged on the small result.
+    const message = relay(modelDownLine({
+      focus: input.prompt, why: pred.why, fromUsd: econ.perRequestUsd, toUsd: econ.targetPerRequestUsd,
+    }));
     return { message, hold: null, state };
   }
 
@@ -195,10 +190,7 @@ function adviseSessionSwitch(input = {}) {
       state: { ...state, heldPrompt: clip(input.prompt, 200) },
     };
   }
-  const message = `[router] Model: the next work needs Opus — ${pred.why}. Tell the user in one sentence, `
-    + 'at the start of your reply, to run `/model opus` before the next message, and that the reasoning so far carries over. '
-    + 'Do not switch it for them.';
-  return { message, hold: null, state };
+  return { message: relay(modelUpLine({ why: pred.why })), hold: null, state };
 }
 
 /**

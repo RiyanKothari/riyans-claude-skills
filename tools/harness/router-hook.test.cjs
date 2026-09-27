@@ -129,7 +129,7 @@ test('advise mode tells the user to switch instead of holding', () => {
   const s = session([human('earlier'), usage('claude-sonnet-5')]);
   const out = recall(s, 'implement the export pipeline across the reporting service', [], { TOKEN_HARNESS_MODEL_SWITCH: 'advise' });
   assert.doesNotMatch(out, /"decision":"block"/);
-  assert.match(out, /the next work needs Opus/);
+  assert.match(out, /Before your next message: \/model opus/);
   assert.doesNotMatch(out, /escalate -> opus/, 'one instruction, not two');
   s.clean();
 });

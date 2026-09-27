@@ -54,6 +54,9 @@ function run(s, mode, input, env = {}) {
   }).stdout;
 }
 
+// Either cache line, in the finished [next] form.
+const CACHE_LINE = /to keep \d+k cached|re-sent \d+k cached tokens/;
+
 test('in block mode a prompt into an expired 400k session is held once, and /clear gets a handoff', () => {
   const s = session([
     human('build the quarterly report'),
@@ -83,7 +86,7 @@ test('a warm session is never blocked', () => {
 test('the guard can be switched off per project', () => {
   const s = session([human('build it'), reply(3 * HOUR, 400000)]);
   assert.doesNotMatch(run(s, 'recall', { prompt: 'next step' }, { TOKEN_HARNESS_CACHE_GUARD: 'off' }), /"decision"/);
-  assert.doesNotMatch(run(s, 'recall', { prompt: 'later' }, { TOKEN_HARNESS_CACHE_GUARD: 'off' }), /\[cache\]/);
+  assert.doesNotMatch(run(s, 'recall', { prompt: 'later' }, { TOKEN_HARNESS_CACHE_GUARD: 'off' }), CACHE_LINE);
   s.clean();
 });
 
@@ -103,8 +106,8 @@ test('by default no message is held; Claude is asked to end its reply with the c
   ]);
   const out = run(s, 'recall', { prompt: 'next' });
   assert.doesNotMatch(out, /"decision"/);
-  assert.match(out, /^\[cache\] End your reply with this line for the user: "400k tokens cached\. Reply within 30 min to keep it cheap; after that your next message re-sends it all \(~\$4\.00\)\. Stepping away\? \/compact first, or \/clear \(~\$0\.56, keeps a summary\)\."$/m);
-  assert.doesNotMatch(run(s, 'recall', { prompt: 'and then' }), /\[cache\]/, 'not repeated within 15 minutes');
+  assert.match(out, /^\[next\] End your reply with exactly this line: "Next: reply within 30 min to keep 400k cached, or \/compact before stepping away \(later: ~\$4\.00 to re-send; \/clear ~\$0\.56\)\."$/m);
+  assert.doesNotMatch(run(s, 'recall', { prompt: 'and then' }), CACHE_LINE, 'not repeated within 15 minutes');
 
   // The desktop app does not show a Stop hook's output, so it prints nothing and
   // only keeps the handoff current.
@@ -115,7 +118,7 @@ test('by default no message is held; Claude is asked to end its reply with the c
 
 test('a small session gets no cache line', () => {
   const s = session([human('x'), reply(1000, 30000)]);
-  assert.doesNotMatch(run(s, 'recall', { prompt: 'next' }), /\[cache\]/);
+  assert.doesNotMatch(run(s, 'recall', { prompt: 'next' }), CACHE_LINE);
   s.clean();
 });
 
@@ -141,8 +144,9 @@ test('after a turn that paid to re-send cached context, the next reply says why 
     human('think harder'), request('r2', 5 * 60000, 'max', 1000, 401000),
   ]);
   const out = run(s, 'recall', { prompt: 'next' });
-  assert.match(out, /\[cache\] The last turn re-sent 400k already-cached tokens \(~\$4\.00\) because effort changed from high to max\. Tell the user in one line at the end of your reply, with the fix: change effort right after a \/compact\./);
-  assert.doesNotMatch(run(s, 'recall', { prompt: 'again' }), /The last turn re-sent/, 'each rewrite is explained once');
+  assert.match(out, /\[next\] End your reply with exactly this line: "The last message re-sent 400k cached tokens \(~\$4\.00\) because effort changed from high to max\. Next time: change effort right after a \/compact\./);
+  assert.strictEqual((out.match(/\[next\]/g) || []).length, 1, 'the explanation and the notice arrive as one line');
+  assert.doesNotMatch(run(s, 'recall', { prompt: 'again' }), /The last message re-sent/, 'each rewrite is explained once');
   s.clean();
 });
 

@@ -1,6 +1,7 @@
 'use strict';
 
 const { FRESH_SESSION_TOKENS, rate, normalizeModel } = require('./model-router/cost.cjs');
+const { relay, rewriteLine, stayCheapLine } = require('./next-command.cjs');
 
 /**
  * Keeps sessions from paying to re-cache context they already had cached.
@@ -108,11 +109,9 @@ function afterReplyNotice(input) {
     && tokens - Number(prev.tokens || 0) < NOTICE_GROWTH_TOKENS) return quiet;
 
   return {
-    message:
-      `[cache] End your reply with this line for the user: "${k(tokens)} tokens cached. Reply within ` +
-      `${pr.oneHour ? '30 min' : '5 min'} to keep it cheap; after that your next message re-sends it all ` +
-      `(~$${pr.rewriteUsd.toFixed(2)}). Stepping away? /compact first, or /clear (~$${pr.freshUsd.toFixed(2)}, ` +
-      'keeps a summary)."',
+    message: relay(stayCheapLine({
+      tokens, window: pr.oneHour ? '30 min' : '5 min', rewriteUsd: pr.rewriteUsd, freshUsd: pr.freshUsd,
+    })),
     state: { sessionId: input.sessionId || null, at: now, tokens },
   };
 }
@@ -138,8 +137,7 @@ function explainRewrite(ev, settings = {}) {
   const why = REASONS[ev.cause];
   if (!s.enabled || !why || ev.usd < s.budgetUsd) return null;
   const [reason, fix] = why(ev);
-  return `[cache] The last turn re-sent ${k(ev.tokens)} already-cached tokens (~$${ev.usd.toFixed(2)}) because ${reason}. ` +
-    `Tell the user in one line at the end of your reply, with the fix: ${fix}.`;
+  return relay(rewriteLine({ tokens: ev.tokens, usd: ev.usd, reason, fix }));
 }
 
 /**

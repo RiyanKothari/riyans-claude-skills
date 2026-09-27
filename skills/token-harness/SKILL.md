@@ -1,6 +1,6 @@
 ---
 name: token-harness
-description: Cut Claude Code token cost through model-tier routing, budget-capped memory recall, and evidence-gated self-scoring. Use whenever a [router], [cache] or [context] line appears in the conversation, when the user mentions cost, tokens, spend, context size, caching, /compact or which model to use, or when deciding whether to delegate work to a cheaper model.
+description: Cut Claude Code token cost through model-tier routing, budget-capped memory recall, and evidence-gated self-scoring. Use whenever a [router], [cache] or [next] line appears in the conversation, when the user mentions cost, tokens, spend, context size, caching, /compact or which model to use, or when deciding whether to delegate work to a cheaper model.
 ---
 
 # Token Harness
@@ -70,13 +70,12 @@ single request — an unused MCP server costs its whole schema forever. Skills a
 paid only when they load, so push detail into `references/`. `npm run audit`
 ranks offenders by that leverage.
 
-**7. Prompt the user to compact at phase boundaries, never mid-implementation.**
-When a `[context]` line appears, tell the user in one sentence and suggest
-`/compact <what to keep>` at the next boundary: research to plan, plan to build,
-or after a failed approach. Save decisions to memory first. The prompt point is
-worked out per session: the lower of where re-reading costs $0.15 per request on
-the current model and 40% of its context window, brought forward at a natural
-break or fast growth, pushed back mid-task. Tune it with
+**7. Copy every `[next]` line, word for word, as the last line of the reply.** Only
+the user can run /compact or /model, so the hook writes the finished line — the
+command, what to keep, and what it costs — and it must reach them every time. One
+per reply at most. The compaction point is worked out per session: the lower of where
+re-reading costs $0.15 per request and 40% of the model's window, brought forward at a
+natural break or fast growth, pushed back mid-task. Tune it with
 `rcskills config compact <on|off|dynamic|tokens>` and `compact-budget <usd>`.
 
 ## Details on demand

@@ -14,14 +14,18 @@ test('silent below the prompt point', () => {
   assert.strictEqual(adviseCompact({ tokens: T - 1, sessionId: 's1', settings: FIXED }).message, null);
 });
 
-test('prompts past the prompt point, and asks Claude to tell the user', () => {
-  const r = adviseCompact({ tokens: T + 5000, sessionId: 's1', settings: FIXED });
+test('prompts past the prompt point with a finished line Claude copies, every time', () => {
+  const r = adviseCompact({ tokens: T + 5000, sessionId: 's1', settings: FIXED, focus: 'the export pipeline' });
   assert.ok(r.message);
-  assert.match(r.message, /\[context\]/);
-  assert.match(r.message, /Tell the user/);
-  assert.match(r.message, /\/compact/);
-  assert.match(r.message, /never mid-implementation/);
+  assert.match(r.message, /^\[next\] End your reply with exactly this line: "Next: \/compact keep decisions and open tasks for "the export pipeline"/);
+  assert.doesNotMatch(r.message, /phase boundary|mid-implementation/, 'no discretion to leave it out');
   assert.strictEqual(r.state.advisedAt, T + 5000);
+});
+
+test('the compaction line stays small', () => {
+  const r = adviseCompact({ tokens: 900000, model: 'claude-opus-5', settings: FIXED, focus: 'x'.repeat(500) });
+  assert.ok(r.message);
+  assert.ok(r.message.length <= 200, `${r.message.length} chars: ${r.message}`);
 });
 
 test('does not nag again until context grows by the remind interval', () => {
@@ -57,10 +61,9 @@ test('costs are shown only when they are known', () => {
   assert.ok(plain.message);
   assert.ok(!plain.message.includes('$'));
 
-  const priced = adviseCompact({ tokens: T + 1, settings: FIXED, costPerRequestUsd: 1.09, rewriteUsd: 5.85 });
+  const priced = adviseCompact({ tokens: T + 1, settings: FIXED, costPerRequestUsd: 1.09 });
   assert.ok(priced.message);
-  assert.match(priced.message, /\$1\.09 per request/);
-  assert.match(priced.message, /\$5\.85 to rewrite/);
+  assert.match(priced.message, /\$1\.09 per message to re-read/);
 });
 
 test('a zero token count never prompts', () => {
@@ -128,10 +131,10 @@ test('growth is measured across prompts in the same session', () => {
   assert.deepStrictEqual(state.samples, [100000, 160000, 220000]);
 });
 
-test('the message says where the prompt point is and why', () => {
+test('the result says where the prompt point is and why; the line says what it costs', () => {
   const r = adviseCompact({ tokens: 500000, sessionId: 's', model: 'claude-opus-5' });
   assert.ok(r.message);
-  assert.match(r.message, /prompt point 300k/);
-  assert.match(r.message, /\$0\.15\/request on claude-opus-5/);
-  assert.match(r.message, /\$0\.25 per request to re-read/);
+  assert.strictEqual(r.threshold, 300000);
+  assert.ok(r.reasons.some((x) => /\$0\.15\/request on claude-opus-5/.test(x)));
+  assert.match(r.message, /500k of context, \$0\.25 per message to re-read/);
 });

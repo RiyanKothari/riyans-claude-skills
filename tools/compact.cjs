@@ -1,6 +1,7 @@
 'use strict';
 
 const { DEFAULTS } = require('./config.cjs');
+const { relay, compactLine } = require('./next-command.cjs');
 
 const DEFAULT_SETTINGS = DEFAULTS.compact;
 const k = (n) => `${Math.round(n / 1000)}k`;
@@ -91,6 +92,7 @@ function computeThreshold(input) {
  *   phase?: string|null,
  *   costPerRequestUsd?: number|null,
  *   rewriteUsd?: number|null,
+ *   focus?: string|null,
  * }} input
  */
 function adviseCompact(input) {
@@ -122,18 +124,14 @@ function adviseCompact(input) {
   const cost = costModule();
   const readPerM = cost ? cost.cacheReadRate(input.model) : null;
   const perRequest = input.costPerRequestUsd ?? (readPerM ? (tokens / 1e6) * readPerM : null);
-  const costs = [];
-  if (perRequest) costs.push(`~$${perRequest.toFixed(2)} per request to re-read`);
-  if (input.rewriteUsd) costs.push(`~$${input.rewriteUsd.toFixed(2)} to rewrite an expired cache`);
-  const costText = costs.length ? ` (${costs.join(', ')})` : '';
 
+  // A finished line, relayed every time this fires: the user runs /compact, so the
+  // user has to see it. Why the prompt point is where it is stays in `reasons` for
+  // anyone debugging it, rather than being paid for in every session.
   return {
-    message:
-      `[context] ${k(tokens)} tokens in this session${costText}; prompt point ${k(threshold)} ` +
-      `(${reasons.join(', ')}). Tell the user in one sentence and suggest /compact at the next ` +
-      'phase boundary — never mid-implementation — naming what to keep, e.g. ' +
-      '"/compact keep the open gaps and decisions". Save anything important to memory first.',
+    message: relay(compactLine({ tokens, perRequestUsd: perRequest, focus: input.focus })),
     threshold,
+    reasons,
     state: { sessionId, advisedAt: tokens, samples },
   };
 }

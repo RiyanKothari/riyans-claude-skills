@@ -53,7 +53,7 @@ production incidents, tasks with no objective check.
 
 Every iteration re-reads the whole context, so a loop multiplies whatever the session
 already costs. Keep caps small, prefer a fresh session for a long loop, and expect the
-`[context]` compaction prompt to appear sooner than usual.
+`[next]` compaction line to appear sooner than usual.
 
 ## Guarantees
 

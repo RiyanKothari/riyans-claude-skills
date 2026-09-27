@@ -91,15 +91,14 @@ test('a Sonnet session is sent back to Opus before the work, not after', () => {
 
 // --- the advice ---
 
-test('stepping down is a line to relay, with the order that keeps the reasoning', () => {
+test('stepping down is one finished line, compacting first so the reasoning is kept', () => {
   const { message, hold } = advise();
   assert.equal(hold, null);
   assert.ok(message);
-  assert.match(message, /^\[router\] Model: the next messages can run on Sonnet/);
-  assert.match(message, /\/compact keep the decisions, open tasks and reasoning/);
-  assert.match(message, /while still on Opus/);
-  assert.match(message, /then `\/model sonnet`/);
-  assert.match(message, /do not switch it for them/);
+  assert.match(message, /^\[next\] End your reply with exactly this line: "Next: \/compact keep decisions and open tasks for /);
+  assert.match(message, /, then \/model sonnet — the last 3 turns were small/);
+  assert.match(message, /\$0\.04 vs \$0\.10 per message/);
+  assert.ok(message.length <= 260, `${message.length} chars`);
 });
 
 test('it is not worth a line when the saving is small', () => {
@@ -122,7 +121,7 @@ test('advise mode says it instead of holding', () => {
   const r = advise({ model: SONNET, prompt: 'build the export pipeline', settings: { hold: false } });
   assert.equal(r.hold, null);
   assert.ok(r.message);
-  assert.match(r.message, /needs Opus/);
+  assert.match(r.message, /"Before your next message: \/model opus — it starts new work\."/);
 });
 
 test('each recommendation is made once per model, and re-arms when the model changes', () => {

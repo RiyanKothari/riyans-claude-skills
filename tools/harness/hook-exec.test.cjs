@@ -46,14 +46,14 @@ test('the generated hook command uses no shell-specific syntax', () => {
 test('the generated hook actually runs through the default shell', () => {
   const dir = sandbox();
   const r = runVia('default', hookCommand('core'), dir);
-  assert.match(r.stdout, /\[context\]/, `hook did not run: ${String(r.stdout).slice(0, 120)}`);
+  assert.match(r.stdout, /\[next\]/, `hook did not run: ${String(r.stdout).slice(0, 120)}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('the generated hook actually runs through bash', { skip: !bashCanRunNode }, () => {
   const dir = sandbox();
   const r = runVia('bash', hookCommand('core'), dir);
-  assert.match(r.stdout, /\[context\]/, `hook did not run: ${String(r.stdout).slice(0, 120)}`);
+  assert.match(r.stdout, /\[next\]/, `hook did not run: ${String(r.stdout).slice(0, 120)}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -65,7 +65,7 @@ test('the committed project hooks actually run through bash', { skip: !bashCanRu
   fs.copyFileSync(path.join(ROOT, '.claude', 'helpers', 'learning-hook.cjs'), path.join(helpers, 'learning-hook.cjs'));
   // Mirror the real layout: the hook loads its compaction logic from tools/.
   fs.mkdirSync(path.join(dir, 'tools'), { recursive: true });
-  for (const f of ['compact.cjs', 'config.cjs']) {
+  for (const f of ['compact.cjs', 'config.cjs', 'next-command.cjs', 'hook-advice.cjs']) {
     fs.copyFileSync(path.join(ROOT, 'tools', f), path.join(dir, 'tools', f));
   }
 
@@ -76,7 +76,7 @@ test('the committed project hooks actually run through bash', { skip: !bashCanRu
   assert.ok(core, 'SessionStart must wire the core hook');
 
   const r = runVia('bash', core.command, dir);
-  assert.match(r.stdout, /\[context\]/, `committed hook did not run: ${String(r.stdout).slice(0, 120)}`);
+  assert.match(r.stdout, /\[next\]/, `committed hook did not run: ${String(r.stdout).slice(0, 120)}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -88,7 +88,7 @@ test('the old cmd /c form is dead under bash', { skip: process.platform !== 'win
   const old = `cmd /c "IF EXIST "${script}" (node "${script}" core) ELSE (exit 0)"`;
   const r = runVia('bash', old, dir);
   assert.strictEqual(r.status, 0, 'reports success');
-  assert.doesNotMatch(r.stdout, /\[context\]/, 'but never runs the hook');
+  assert.doesNotMatch(r.stdout, /\[next\]/, 'but never runs the hook');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -121,7 +121,7 @@ test('a --global hook runs in any other project', () => {
   const dir = sandbox();
   const { home, env } = fakeHome();
   const r = runHook(HOOK, ['core', '--global'], dir, PAYLOAD, env);
-  assert.match(r.stdout, /\[context\]/);
+  assert.match(r.stdout, /\[next\]/);
   fs.rmSync(dir, { recursive: true, force: true });
   fs.rmSync(home, { recursive: true, force: true });
 });
@@ -252,9 +252,9 @@ test('the real hooks step Opus down after small work, and carry the reasoning ac
   const recall = (prompt) => runHook(HOOK, ['recall'], dir, JSON.stringify({ prompt, transcript_path: tp, session_id: 'sw' }), hookEnv).stdout;
 
   const first = recall('and helper four?');
-  assert.match(first, /\[router\] Model: the next messages can run on Sonnet/);
-  assert.match(first, /\/compact keep the decisions, open tasks and reasoning/);
-  assert.doesNotMatch(recall('and helper five?'), /can run on Sonnet/, 'said once');
+  assert.match(first, /\[next\] End your reply with exactly this line: "Next: \/compact keep decisions and open tasks for "and helper four\?", then \/model sonnet/);
+  assert.equal((first.match(/\[next\]/g) || []).length, 1, 'one command line per reply');
+  assert.doesNotMatch(recall('and helper five?'), /\/model sonnet/, 'said once');
 
   // The user switches. Nothing is written for a same-family change.
   const switchHook = (from, to) => runHook(HOOK, ['switch'], dir, JSON.stringify({

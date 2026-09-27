@@ -28,14 +28,13 @@ const notice = (over = {}) => afterReplyNotice({
 test('a large session asks Claude to end its reply with how long the cache stays cheap', () => {
   const r = notice();
   assert.strictEqual(r.message,
-    '[cache] End your reply with this line for the user: "500k tokens cached. Reply within 30 min to keep it ' +
-    'cheap; after that your next message re-sends it all (~$5.00). Stepping away? /compact first, or /clear ' +
-    '(~$0.56, keeps a summary)."');
+    '[next] End your reply with exactly this line: "Next: reply within 30 min to keep 500k cached, or /compact ' +
+    'before stepping away (later: ~$5.00 to re-send; /clear ~$0.56)."');
   assert.deepStrictEqual(r.state, { sessionId: 's1', at: NOW, tokens: 500000 });
 });
 
 test('a 5-minute cache is only promised 5 minutes', () => {
-  assert.match(String(notice({ cacheTtl: '5m' }).message), /Reply within 5 min/);
+  assert.match(String(notice({ cacheTtl: '5m' }).message), /reply within 5 min/);
 });
 
 test('the line repeats at most every 15 minutes, unless context grew by 100k', () => {
@@ -61,8 +60,8 @@ const ev = (over = {}) => ({ cause: 'other', tokens: 584000, usd: 5.84, idleMs: 
 
 test('every rewrite cause is explained with its own fix', () => {
   assert.strictEqual(explainRewrite(ev({ cause: 'effortChange', fromEffort: 'high', toEffort: 'max', tokens: 414000, usd: 4.14 })),
-    '[cache] The last turn re-sent 414k already-cached tokens (~$4.14) because effort changed from high to max. ' +
-    'Tell the user in one line at the end of your reply, with the fix: change effort right after a /compact.');
+    '[next] End your reply with exactly this line: "The last message re-sent 414k cached tokens (~$4.14) because ' +
+    'effort changed from high to max. Next time: change effort right after a /compact."');
   assert.match(String(explainRewrite(ev({ cause: 'expired', idleMs: 3 * HOUR }))), /lapsed after 3h 0m idle\. .*run \/compact before stepping away/);
   assert.match(String(explainRewrite(ev({ cause: 'lateInHour', idleMs: 38 * MIN }))), /lapsed after 38m idle\. .*reply within 30 minutes/);
   assert.match(String(explainRewrite(ev({ cause: 'modelCommand' }))), /\/model re-selected the model already in use/);
@@ -154,5 +153,5 @@ test('the handoff names recent asks, edited files and the last reply, clipped', 
 
 test('a Bedrock Sonnet 4.5 session gets the same notice, at its own price', () => {
   const r = notice({ model: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' });
-  assert.match(String(r.message), /re-sends it all \(~\$3\.00\)/);
+  assert.match(String(r.message), /~\$3\.00 to re-send/);
 });

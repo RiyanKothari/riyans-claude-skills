@@ -67,7 +67,7 @@ jobs:
           echo "hook command: $CMD"
           OUT=$(echo '{"context_tokens":600000}' | CLAUDE_PROJECT_DIR="$PWD" bash -c "$CMD")
           echo "$OUT"
-          echo "$OUT" | grep -q '\[context\]'
+          echo "$OUT" | grep -q '\[next\]'
 
       - name: uninstall leaves no harness hooks behind
         shell: bash
