@@ -223,6 +223,10 @@ function recentActivity(filePath, opts = {}) {
   let lastResponseAt = 0;
   let cacheTtl = null;
   let lastText = '';
+  // What a model switch would lose: reasoning is bound to the model that wrote it,
+  // so it is carried across as text. Only readable blocks count; most are signature-only.
+  const thinking = [];
+  let todos = null;
 
   for (const line of lines) {
     let o;
@@ -252,7 +256,12 @@ function recentActivity(filePath, opts = {}) {
 
     for (const block of o.message.content) {
       if (block && block.type === 'text' && block.text && block.text.trim()) lastText = block.text.trim();
+      if (block && block.type === 'thinking' && typeof block.thinking === 'string' && block.thinking.trim()) {
+        thinking.push(block.thinking.trim());
+        if (thinking.length > 3) thinking.shift();
+      }
       if (!block || block.type !== 'tool_use') continue;
+      if (block.name === 'TodoWrite' && block.input && Array.isArray(block.input.todos)) todos = block.input.todos;
       if (block.name === 'Agent' || block.name === 'Task') lastAgentAt = Date.parse(o.timestamp) || lastAgentAt;
       const kind = classifyTool(block.name || '');
       if (kind === 'edit') {
@@ -295,6 +304,10 @@ function recentActivity(filePath, opts = {}) {
       prompts: completed.slice(-3).map((t) => t.prompt),
       files: [...new Set(completed.slice(-5).flatMap((t) => [...t.files]))],
       lastText,
+      thinking: [...thinking],
+      todos: (todos || [])
+        .filter((t) => t && t.status !== 'completed' && t.content)
+        .map((t) => String(t.content)),
     },
   };
 }

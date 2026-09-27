@@ -30,9 +30,12 @@ const DEFAULTS = {
   },
   modelSwitch: {
     enabled: true,
-    // Say what the session model costs once a median turn on it would cost this
-    // much more than the same turn on Sonnet.
+    // Suggest stepping an Opus session down only once a median turn on it would cost
+    // this much more than the same turn on Sonnet.
     budgetUsd: 0.5,
+    // On Sonnet, hold a message that needs Opus once, so it does not run on the weaker
+    // model by accident. 'advise' only says so instead.
+    hold: true,
   },
   // Record each turn's outcome at Stop so the router learns (the strict profile).
   learning: false,
@@ -131,14 +134,18 @@ function sanitizeSwitch(raw) {
   return {
     enabled: r.enabled !== false,
     budgetUsd: positiveFloat(r.budgetUsd) || DEFAULTS.modelSwitch.budgetUsd,
+    hold: r.hold !== false,
   };
 }
 
-/** on | off | <usd>. Returns false when the value is not one of those. */
+/** on | off | hold | advise | <usd>. Returns false when the value is not one of those. */
 function applySwitch(modelSwitch, value) {
   const v = String(value ?? '').trim().toLowerCase().replace(/^\$/, '');
   const amount = positiveFloat(v);
-  if (['off', 'false', '0', 'no'].includes(v)) modelSwitch.enabled = false;
+  if (v === 'hold' || v === 'advise') {
+    modelSwitch.enabled = true;
+    modelSwitch.hold = v === 'hold';
+  } else if (['off', 'false', '0', 'no'].includes(v)) modelSwitch.enabled = false;
   else if (['on', 'true', 'yes'].includes(v)) modelSwitch.enabled = true;
   else if (amount) {
     modelSwitch.enabled = true;
@@ -206,7 +213,7 @@ function set(key, value) {
   if (key === 'model-switch') {
     const modelSwitch = sanitizeSwitch({ ...DEFAULTS.modelSwitch, ...(current.modelSwitch || {}) });
     if (!applySwitch(modelSwitch, value)) {
-      throw new Error(`model-switch expects on, off or a dollar amount, got "${value}"`);
+      throw new Error(`model-switch expects on, off, hold, advise or a dollar amount, got "${value}"`);
     }
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, `${JSON.stringify({ ...current, modelSwitch }, null, 2)}\n`, 'utf8');
@@ -260,15 +267,16 @@ function describe(settings) {
     ? 'holds the first message after the cache expires, once'
     : 'tells you after a reply until when the cache is cheap; never holds a message'}`);
   const m = settings.modelSwitch || DEFAULTS.modelSwitch;
-  lines.push(`model switch:       ${m.enabled ? 'on' : 'off'}`);
-  lines.push(`  tells you when:   a median turn on this session's model costs $${m.budgetUsd}+ more than on Sonnet`);
-  lines.push('  then:             quotes both per-request prices and the payback; never switches the model for you');
+  lines.push(`model switch:       ${m.enabled ? 'on' : 'off'} (${m.hold === false ? 'advise' : 'hold'}; Opus sessions only)`);
+  lines.push(`  down to Sonnet:   after 3 small turns, when a median turn saves $${m.budgetUsd}+; /compact first keeps the reasoning`);
+  lines.push(`  up to Opus:       ${m.hold === false ? 'says so' : 'holds the message once'} when it needs complex work, deep reasoning or starts new work`);
+  lines.push('  never:            switches the model for you (Claude Code refuses a session re-pricing itself)');
   lines.push(`outcome learning:   ${settings.learning ? 'on (each turn recorded at Stop, no extra process)' : 'off'}`);
   lines.push(`config file:        ${configPath()}`);
   lines.push('env overrides:      TOKEN_HARNESS_COMPACT=on|off|dynamic|<tokens>, '
     + 'TOKEN_HARNESS_COMPACT_BUDGET=<usd>, TOKEN_HARNESS_COMPACT_REMIND=<tokens>, '
     + 'TOKEN_HARNESS_CACHE_GUARD=on|off|notify|block|<usd>, '
-    + 'TOKEN_HARNESS_MODEL_SWITCH=on|off|<usd>, TOKEN_HARNESS_LEARNING=on|off');
+    + 'TOKEN_HARNESS_MODEL_SWITCH=on|off|hold|advise|<usd>, TOKEN_HARNESS_LEARNING=on|off');
   return lines.join('\n');
 }
 
@@ -279,7 +287,7 @@ if (require.main === module) {
     console.log(describe(load()));
   } catch (e) {
     console.error(e.message);
-    console.error('usage: rcskills config [compact <on|off|dynamic|tokens>] [compact-budget <usd>] [compact-remind <tokens>] [cache-guard <on|off|notify|block|usd>] [model-switch <on|off|usd>] [learning <on|off>]');
+    console.error('usage: rcskills config [compact <on|off|dynamic|tokens>] [compact-budget <usd>] [compact-remind <tokens>] [cache-guard <on|off|notify|block|usd>] [model-switch <on|off|hold|advise|usd>] [learning <on|off>]');
     process.exitCode = 1;
   }
 }

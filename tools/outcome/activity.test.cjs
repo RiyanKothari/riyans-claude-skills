@@ -126,7 +126,7 @@ test('the last response time and cache lifetime are read, for the cold-cache gua
   ], 'next');
   assert.strictEqual(a.lastResponseAt, Date.parse(at));
   assert.strictEqual(a.cacheTtl, '1h');
-  assert.deepStrictEqual(a.handoff, { prompts: ['build it'], files: ['/r/a.js'], lastText: 'Built.' });
+  assert.deepStrictEqual(a.handoff, { prompts: ['build it'], files: ['/r/a.js'], lastText: 'Built.', thinking: [], todos: [] });
 });
 
 test('a 5-minute cache write is recognised', () => {
@@ -135,4 +135,22 @@ test('a 5-minute cache write is recognised', () => {
     { type: 'assistant', timestamp: '2026-09-16T08:00:00.000Z', message: { model: 'claude-opus-5', usage: { cache_creation_input_tokens: 5, cache_creation: { ephemeral_5m_input_tokens: 5 } } } },
   ], 'next');
   assert.strictEqual(a.cacheTtl, '5m');
+});
+
+test('the handoff keeps the readable reasoning and the open tasks a model switch would strand', () => {
+  const a = phaseOf([
+    human('build the export'),
+    tools(
+      { type: 'thinking', thinking: 'first thought', signature: 'x' },
+      { type: 'thinking', thinking: '', signature: 'signature-only blocks carry nothing readable' },
+      { type: 'tool_use', name: 'TodoWrite', input: { todos: [{ content: 'done already', status: 'completed' }, { content: 'quote fields', status: 'in_progress' }] } },
+    ),
+    tools(
+      { type: 'thinking', thinking: 'second thought' },
+      { type: 'thinking', thinking: 'third thought' },
+      { type: 'thinking', thinking: 'fourth thought' },
+    ),
+  ]);
+  assert.deepStrictEqual(a.handoff.thinking, ['second thought', 'third thought', 'fourth thought'], 'the latest three readable blocks');
+  assert.deepStrictEqual(a.handoff.todos, ['quote fields'], 'open tasks only');
 });

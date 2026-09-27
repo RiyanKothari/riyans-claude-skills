@@ -51,6 +51,7 @@ const DB = process.env.SMART_MEMORY_PATH || path.join(DATA, 'records.jsonl');
 const HANDOFF = path.join(DATA, 'handoff.json');
 const COMPACT_STATE = path.join(DATA, 'compact-state.json');
 const SWITCH_STATE = path.join(DATA, 'model-switch-state.json');
+const SWITCH_HANDOFF = path.join(DATA, 'switch-handoff.json');
 const GUARD_STATE = path.join(DATA, 'cache-guard-state.json');
 const NOTICE_STATE = path.join(DATA, 'cache-notice-state.json');
 // Pinned policy lives in the harness repo's own store and follows every project.
@@ -210,50 +211,44 @@ function routerNote(r, neighbors) {
 }
 
 /**
- * What this session's model costs it, once that is worth interrupting for.
- *
- * This used to fire only when the last 6 turns were all small. Replayed over real
- * transcripts that fired in 1 of 7 sessions, at turn 54, covering 8% of spend —
- * because small turns are 8% of the bill and complex ones are 82%. Cost per
- * request is set by context size and the model's rate, so `session-switch.cjs`
- * measures that instead; all-small recent work now strengthens the message rather
- * than gating it.
+ * Which model the next work should run on, for Opus and Sonnet sessions. Down to
+ * Sonnet after measured small work, as a line relayed at the end of the reply; up to
+ * Opus before work that needs it, holding the message once so it does not run on the
+ * weaker model. `session-switch.cjs` owns the rule and its backtest.
  */
-function modelSwitchNote(activity, input, scoreMod) {
-  if (!activity) return null;
+function modelSwitchAdvice(activity, input, prompt) {
+  const quiet = { message: null, hold: null };
+  if (!activity) return quiet;
   const switchMod = req('model-router/session-switch.cjs');
   const configMod = req('config.cjs');
-  if (!switchMod || !configMod) return null;
-
-  // Recent small work is an amplifier, not a gate: it says the session is not
-  // currently doing anything that needs the expensive model.
-  let allSmall = false;
-  let smallCount = 0;
-  if (scoreMod && Array.isArray(activity.recent)) {
-    const last = activity.recent.slice(-6);
-    if (last.length >= 4 && last.every((t) => ['trivial', 'simple'].includes(scoreMod.actualTier(t)))) {
-      allSmall = true;
-      smallCount = last.length;
-    }
-  }
-
+  if (!switchMod || !configMod) return quiet;
   try {
     const result = switchMod.adviseSessionSwitch({
       model: activity.model,
       tokens: activity.tokens,
       cacheTtl: activity.cacheTtl,
-      allSmall,
-      smallCount,
+      recent: activity.recent,
+      prompt,
       sessionId: input.session_id || null,
       state: readJsonFile(SWITCH_STATE),
       settings: configMod.load().modelSwitch,
     });
     if (result.state) writeJsonFile(SWITCH_STATE, result.state);
-    return result.message;
+    return { message: result.message, hold: result.hold };
   } catch {
-    // Price advice is optional; never block the prompt over it.
-    return null;
+    // Model advice is optional; never block the prompt over a failure in it.
+    return quiet;
   }
+}
+
+/** The reasoning carried across a model switch, shown once on the next prompt. */
+function switchHandoffLine(input) {
+  const mod = req('model-router/switch-handoff.cjs');
+  const record = readJsonFile(SWITCH_HANDOFF);
+  if (!mod || !record) return null;
+  const line = mod.handoffLine(record, { sessionId: input.session_id || null });
+  if (line) writeJsonFile(SWITCH_HANDOFF, { ...record, shown: true });
+  return line;
 }
 
 /** A redacted summary of this session, which SessionStart shows after /clear. */
@@ -350,12 +345,28 @@ function modeSwitch() {
   } catch {
     reason = null;
   }
+  captureSwitchHandoff(input);
   if (reason) {
     process.stdout.write(`${JSON.stringify({
       hookSpecificOutput: { hookEventName: 'PreModelSwitch', permissionDecision: 'ask', permissionDecisionReason: reason },
     })}\n`);
   }
   process.exit(0);
+}
+
+/** A real change of model family strands the old model's reasoning; keep it as text. */
+function captureSwitchHandoff(input) {
+  const router = req('model-router/index.cjs');
+  const mod = req('model-router/switch-handoff.cjs');
+  if (!router || !mod) return;
+  const from = router.modelFamily(input.from_model);
+  const to = router.modelFamily(input.to_model);
+  if (!from || !to || from === to) return;
+  const activity = sessionActivity(input, '');
+  const record = activity && mod.captureSwitch(activity.handoff, {
+    sessionId: input.session_id || null, from: input.from_model, to: input.to_model,
+  });
+  if (record) writeJsonFile(SWITCH_HANDOFF, record);
 }
 
 /**
@@ -400,6 +411,11 @@ function modeRecall() {
     process.stdout.write(`${JSON.stringify({ decision: 'block', reason: hold })}\n`);
     process.exit(0);
   }
+  const modelAdvice = modelSwitchAdvice(activity, input, prompt);
+  if (modelAdvice.hold) {
+    process.stdout.write(`${JSON.stringify({ decision: 'block', reason: modelAdvice.hold })}\n`);
+    process.exit(0);
+  }
 
   writeJsonFile(STATE, {
     prompt: prompt.slice(0, 500),
@@ -411,10 +427,13 @@ function modeRecall() {
   const scoreMod = req('outcome/score.cjs');
   const router = req('model-router/index.cjs');
   const out = [];
+  const handoff = switchHandoffLine(input);
+  if (handoff) out.push(handoff);
 
   const neighbors = findNeighbors(store, prompt, scoreMod);
 
-  if (router) {
+  // The session-model advice already says Opus; an escalate line on top would repeat it.
+  if (router && !(modelAdvice.message && /needs Opus/.test(modelAdvice.message))) {
     try {
       const note = routerNote(router.recommend(prompt, {
         repoRoot: ROOT,
@@ -430,8 +449,7 @@ function modeRecall() {
       // Routing advice is optional; never block the prompt.
     }
   }
-  const switchNote = modelSwitchNote(activity, input, scoreMod);
-  if (switchNote) out.push(switchNote);
+  if (modelAdvice.message) out.push(modelAdvice.message);
 
   if (store) {
     try {

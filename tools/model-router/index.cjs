@@ -348,6 +348,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  HARD_SIGNALS,
   classify,
   recommend,
   estimateCost,

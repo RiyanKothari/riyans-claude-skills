@@ -5,7 +5,8 @@ const path = require('path');
 const { MemoryStore } = require('../memory/store.cjs');
 const { backtest, collectTurns, formatReport } = require('./backtest.cjs');
 const { actualTier } = require('./score.cjs');
-const { findTranscripts } = require('./transcript.cjs');
+const { findTranscripts, parseTranscript } = require('./transcript.cjs');
+const { replaySwitchPolicy, formatReplay } = require('../model-router/session-switch.cjs');
 const { followThrough, formatFollowThrough } = require('./delegation.cjs');
 
 const { projectDataDir } = require('../paths.cjs');
@@ -25,6 +26,10 @@ function main() {
     const result = backtest(turns);
     console.log(formatReport(result));
     console.log(`\n${formatFollowThrough(followThrough(findTranscripts()))}`);
+    // The session-model advice, replayed in order per session: how often following it
+    // would have put complex work on Sonnet. That rate is the accuracy that matters.
+    const sessions = findTranscripts().map((f) => parseTranscript(f)).filter((t) => t.length >= 4);
+    console.log(`\n${formatReplay(replaySwitchPolicy(sessions))}`);
 
     if (rest.includes('--rows')) {
       console.log('\nper-turn:');

@@ -187,7 +187,7 @@ test('model-switch advice is on by default, and set, env and describe all reach 
   const saved = process.env.TOKEN_HARNESS_CONFIG;
   process.env.TOKEN_HARNESS_CONFIG = env.TOKEN_HARNESS_CONFIG;
   try {
-    assert.deepEqual(load(env).modelSwitch, { enabled: true, budgetUsd: 0.5 });
+    assert.deepEqual(load(env).modelSwitch, { enabled: true, budgetUsd: 0.5, hold: true });
 
     assert.strictEqual(load({ ...env, TOKEN_HARNESS_MODEL_SWITCH: 'off' }).modelSwitch.enabled, false);
     assert.strictEqual(load({ ...env, TOKEN_HARNESS_MODEL_SWITCH: '2.50' }).modelSwitch.budgetUsd, 2.5);
@@ -196,12 +196,20 @@ test('model-switch advice is on by default, and set, env and describe all reach 
     set('model-switch', 'off');
     assert.strictEqual(load(env).modelSwitch.enabled, false);
     set('model-switch', '1.25');
-    assert.deepEqual(load(env).modelSwitch, { enabled: true, budgetUsd: 1.25 }, 'a budget re-enables it');
-    assert.throws(() => set('model-switch', 'sometimes'), /on, off or a dollar amount/);
+    assert.deepEqual(load(env).modelSwitch, { enabled: true, budgetUsd: 1.25, hold: true }, 'a budget re-enables it');
+    assert.throws(() => set('model-switch', 'sometimes'), /on, off, hold, advise or a dollar amount/);
 
-    assert.match(describe(load(env)), /model switch:       on/);
-    assert.match(describe(load(env)), /\$1\.25\+ more than on Sonnet/);
-    assert.match(describe(load(env)), /never switches the model for you/);
+    assert.match(describe(load(env)), /model switch:       on \(hold; Opus sessions only\)/);
+    assert.match(describe(load(env)), /saves \$1\.25\+/);
+    assert.match(describe(load(env)), /switches the model for you/);
+
+    set('model-switch', 'advise');
+    assert.strictEqual(load(env).modelSwitch.hold, false, 'advise only says so');
+    assert.match(describe(load(env)), /\(advise; Opus sessions only\)/);
+    assert.strictEqual(load(env).modelSwitch.budgetUsd, 1.25, 'the mode keeps the budget');
+    set('model-switch', 'hold');
+    assert.strictEqual(load(env).modelSwitch.hold, true);
+    assert.strictEqual(load({ ...env, TOKEN_HARNESS_MODEL_SWITCH: 'advise' }).modelSwitch.hold, false, 'env reaches the mode');
   } finally {
     if (saved === undefined) delete process.env.TOKEN_HARNESS_CONFIG;
     else process.env.TOKEN_HARNESS_CONFIG = saved;
@@ -212,7 +220,7 @@ test('model-switch advice is on by default, and set, env and describe all reach 
 test('a damaged modelSwitch block falls back instead of poisoning the advice', () => {
   const c = withConfig('{"modelSwitch":{"budgetUsd":"free","enabled":"yes please"}}');
   try {
-    assert.deepEqual(load({}).modelSwitch, { enabled: true, budgetUsd: 0.5 });
+    assert.deepEqual(load({}).modelSwitch, { enabled: true, budgetUsd: 0.5, hold: true });
   } finally {
     c.clean();
   }

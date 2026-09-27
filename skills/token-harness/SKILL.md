@@ -41,15 +41,18 @@ delegated on wording alone, because wording cannot tell it from complex; Sonnet 
 suggested for the session instead, once its recent turns prove small. Older Opus and
 Sonnet versions are never the cheapest adequate choice and are never routed to.
 
-**2b. The session model is the biggest lever, and it is the user's to pull.** Across
-11,709 real requests, 53.8% of spend was cache reads and 25.1% cache writes against
-21.0% for output: a long session mostly pays to re-read itself. Cache reads are billed
-off the model's input rate, so the whole dominant cost falls with it. When a median
-turn on this session's model would cost $0.50 more than on Sonnet, the hook quotes
-both per-request prices, the one-time re-cache and the payback — 9 requests on a
-5-minute cache, 14 on an hour, at any context size, against a median turn of 22.
-Relay it in one sentence and offer `/model opusplan` (plan on Opus, build on Sonnet)
-when the work still needs the stronger model. Never switch the model for the user.
+**2b. Opus where it earns its price, and nowhere else.** For Opus sessions only (every
+Opus version), the hook predicts the model the next work needs. Down to Sonnet after 3
+measured small turns, when the prompt is not complex, reasoning-heavy or a new work
+order; up to Opus the moment one arrives. Replayed over 316 real turns, following it ran
+complex work on Sonnet 2% of the time, against 29% for judging by the prompt alone —
+`rcskills backtest` re-measures that rate on new sessions. Relay a down line at the end
+of the reply, in its order: `/compact` while still on Opus (Opus writes the summary and
+the re-cache shrinks), then `/model sonnet`. On Sonnet, a message that needs Opus is held
+once with `/model opus` — sending it again runs it anyway. Reasoning is bound to the
+model that wrote it, so the switch hook saves the readable reasoning, open tasks and files
+as text and the next prompt shows a `[handoff]` line: continue from it. Never switch the
+model for the user; Claude Code refuses a session re-pricing itself.
 
 **3. Never dump memory into context.** Query it. Recall is BM25-ranked and hard-
 capped by a token budget, so cost cannot grow with store size. Unused notes decay
