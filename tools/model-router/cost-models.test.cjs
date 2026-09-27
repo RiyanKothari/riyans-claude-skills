@@ -60,7 +60,8 @@ test('provider and alias spellings resolve to the same base model', () => {
 });
 
 test('a Claude release newer than the table is priced as its family, anything else stays unpriced', () => {
-  assert.deepStrictEqual(rate('claude-opus-6'), rate('claude-opus-5'));
+  assert.deepStrictEqual(rate('claude-opus-6'), rate('claude-opus-5-5'), 'the newest known Opus');
+  assert.deepStrictEqual(rate('claude-opus-5-5'), { in: 4, out: 20, cacheRead: 0.2 }, 'Opus 5.5 reads its cache at 0.05x');
   assert.deepStrictEqual(rate('claude-sonnet-5-5-20270101'), rate('claude-sonnet-5'));
   assert.strictEqual(contextWindow('claude-haiku-5'), 200000);
   for (const other of ['<synthetic>', 'haiku', 'gpt-5', 'claude-instant-1', '']) assert.strictEqual(rate(other), null, other);

@@ -100,8 +100,8 @@ ways, the plugin's hooks stand down so nothing runs twice.
 | A large session, before stepping away | `Next: reply within 30 min to keep 367k cached, or /compact before stepping away…` | Reply soon, or `/compact` first |
 | After a message that re-sent cached context | `The last message re-sent 306k cached tokens (~$3.06) because…` | Follow the fix it names |
 | Context worth compacting | `Next: /compact keep … — 360k of context, $0.18 per message to re-read.` | Run it |
-| An Opus session doing small work | The next messages can run on Sonnet, with the per-request prices | `/compact` first, then `/model sonnet` |
-| A Sonnet session about to start work that needs Opus | The message is held once, with the reason | `/model opus` and send it again, or send it again as is |
+| You send small work on Opus | Held before it runs: Sonnet's price, then `/compact` → `/model sonnet`, and your message handed back | Switch and resend, or just resend |
+| You send Opus work on Sonnet | Held before it runs, with the reason and your message handed back | `/model opus` and resend, or just resend |
 | The first prompt after changing model family | `[handoff]`: the reasoning, open tasks and files the old model left | Nothing: Claude continues from it |
 | `/model` re-selecting the model already in use | A confirmation, with the re-cache price | Cancel unless you meant it |
 | A new session after `/clear` | `[last session 2h ago]` recent asks, files and last reply | Nothing: Claude has the thread |

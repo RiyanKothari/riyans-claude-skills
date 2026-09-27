@@ -251,10 +251,14 @@ test('the real hooks step Opus down after small work, and carry the reasoning ac
   ].map((l) => JSON.stringify(l)).join('\n') + '\n');
   const recall = (prompt) => runHook(HOOK, ['recall'], dir, JSON.stringify({ prompt, transcript_path: tp, session_id: 'sw' }), hookEnv).stdout;
 
-  const first = recall('and helper four?');
-  assert.match(first, /\[next\] End your reply with exactly this line: "Next: \/compact keep decisions and open tasks for "and helper four\?", then \/model sonnet/);
-  assert.equal((first.match(/\[next\]/g) || []).length, 1, 'one command line per reply');
-  assert.doesNotMatch(recall('and helper five?'), /\/model sonnet/, 'said once');
+  // The prompt is read before it runs: small work on Opus is held once, at no token cost.
+  const held = JSON.parse(recall('and helper four?'));
+  assert.equal(held.decision, 'block');
+  assert.match(held.reason, /^\[rcskills\] Before this runs: .*\/compact keep decisions and open tasks for "and helper four\?", then \/model sonnet, then send this again/);
+  const resent = recall('and helper four?');
+  assert.doesNotMatch(resent, /"decision"/, 'sending it again runs it');
+  assert.doesNotMatch(resent, /\/model sonnet/, 'and the advice is not repeated');
+  assert.doesNotMatch(recall('/compact keep decisions'), /"decision"/, 'a slash command is never held');
 
   // The user switches. Nothing is written for a same-family change.
   const switchHook = (from, to) => runHook(HOOK, ['switch'], dir, JSON.stringify({

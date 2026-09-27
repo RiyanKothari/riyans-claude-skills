@@ -1,13 +1,15 @@
 'use strict';
 
 // Anthropic first-party list prices, USD per million tokens, from
-// platform.claude.com/docs/en/about-claude/pricing (checked 2026-09-17). `cacheRead`
+// platform.claude.com/docs/en/about-claude/pricing (checked 2026-09-28). `cacheRead`
 // is set only where it differs from the usual 0.1x input. Update when prices change.
 const PRICING = {
   'claude-fable-5-1': { in: 10, out: 50, cacheRead: 0.25 },
   'claude-mythos-5-1': { in: 10, out: 50, cacheRead: 0.25 },
   'claude-fable-5': { in: 10, out: 50 },
   'claude-mythos-5': { in: 10, out: 50 },
+  // Cache reads at 0.05x input: the same $0.20/M as Sonnet 5.
+  'claude-opus-5-5': { in: 4, out: 20, cacheRead: 0.2 },
   'claude-opus-5': { in: 5, out: 25 },
   'claude-opus-4-8': { in: 5, out: 25 },
   'claude-opus-4-7': { in: 5, out: 25 },
@@ -41,7 +43,7 @@ const DEFAULT_WINDOW = 1000000;
 const FAMILY_FALLBACK = {
   fable: 'claude-fable-5-1',
   mythos: 'claude-mythos-5-1',
-  opus: 'claude-opus-5',
+  opus: 'claude-opus-5-5',
   sonnet: 'claude-sonnet-5',
   haiku: 'claude-haiku-4-5',
 };

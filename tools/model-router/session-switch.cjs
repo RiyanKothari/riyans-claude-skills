@@ -4,7 +4,7 @@ const { DEFAULTS } = require('../config.cjs');
 const cost = require('./cost.cjs');
 const { classify, modelFamily, HARD_SIGNALS } = require('./index.cjs');
 const { actualTier } = require('../outcome/score.cjs');
-const { relay, modelDownLine, modelUpLine } = require('../next-command.cjs');
+const { relay, compactCommand, modelDownLine, modelUpLine } = require('../next-command.cjs');
 
 const DEFAULT_SETTINGS = DEFAULTS.modelSwitch;
 
@@ -17,9 +17,27 @@ const TARGET = 'claude-sonnet-5';
 
 /**
  * Requests in a median turn, measured across 300 real turns: p25 5, p50 22,
- * p75 52, p90 105. Used to express a per-request saving as a per-turn one.
+ * p75 52, p90 105. A switch must repay within one of these to be worth a hold.
  */
 const MEDIAN_TURN_REQUESTS = 22;
+
+/**
+ * What a request spends besides re-reading its context, measured over 12,665 real
+ * requests (whole-context rewrites after a lapse excluded; those are the cache
+ * guard's business): a mean 2,900 tokens written to the cache and 2,500 of output.
+ * Pricing a switch on cache reads alone was right for Opus 5 and wrong for Opus 5.5,
+ * which reads its cache at Sonnet's $0.20/M: there the whole saving is here.
+ */
+const WRITE_TOKENS_PER_REQUEST = 2900;
+const OUTPUT_TOKENS_PER_REQUEST = 2500;
+
+/**
+ * About what a session holds right after /compact. The advice compacts before it
+ * switches, so the one-time re-cache on the new model is charged on this, not on the
+ * full context: at 400k on Opus 5.5 that is the difference between a 44-request and a
+ * 5-request payback.
+ */
+const POST_COMPACT_TOKENS = 40000;
 
 /**
  * Completed small turns needed before stepping down. Replayed over 316 real turns,
@@ -38,37 +56,54 @@ const SMALL_RUN = 3;
 const WORK_ORDER = /\b(add|build|implement|create|make|design|architect|plan|planning|measure|integrate|refactor|rewrite|migrate|set ?up|develop|improve|optimi[sz]e|redesign|port|convert|automate|research|audit|investigate|increase|reduce)\b/i;
 
 const SMALL = new Set(['trivial', 'simple']);
-const clip = (s, n) => {
-  const t = String(s || '').replace(/\s+/g, ' ').trim();
-  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
-};
+const money = (n) => `$${n.toFixed(2)}`;
 
 /**
- * What switching this session from `model` to `target` is worth. Payback is
- * context-independent: the one-time re-cache and the per-request saving both scale
- * with tokens — 9 requests on a 5-minute cache, 14 on a one-hour cache.
+ * Claude Code erases a held prompt (hooks docs: "Blocks prompt processing and erases
+ * the prompt"), so the hold hands it back to copy. The reason is shown to the user
+ * only and never reaches the model, so this costs no tokens.
+ * @param {string} prompt
+ */
+const giveBack = (prompt) => `\n\nYour message, to send again:\n${prompt.length > 4000 ? `${prompt.slice(0, 3999)}…` : prompt}`;
+
+/**
+ * What one typical request costs on `model` with `tokens` of cached context.
+ * @param {string|null|undefined} model
+ * @param {number} tokens
+ * @param {boolean} oneHour
+ */
+function requestUsd(model, tokens, oneHour) {
+  const r = cost.rate(model);
+  const read = cost.cacheReadRate(model);
+  if (!r || read === null || read === undefined) return null;
+  const write = r.in * (oneHour ? 2 : 1.25);
+  return (tokens * read + WRITE_TOKENS_PER_REQUEST * write + OUTPUT_TOKENS_PER_REQUEST * r.out) / 1e6;
+}
+
+/**
+ * What switching this session from `model` to `target` is worth per request, what the
+ * one-time re-cache on the target costs, and how many requests repay it.
  *
- * @param {{model?: string|null, tokens?: number, cacheTtl?: '1h'|'5m'|null, target?: string}} input
+ * @param {{model?: string|null, tokens?: number, cacheTtl?: '1h'|'5m'|null, target?: string, compactFirst?: boolean}} input
  */
 function switchEconomics(input = {}) {
   const tokens = Number(input.tokens);
   if (!Number.isFinite(tokens) || tokens <= 0) return null;
 
   const to = input.target || TARGET;
-  const fromRead = cost.cacheReadRate(input.model);
-  const toRead = cost.cacheReadRate(to);
-  const toRate = cost.rate(to);
-  if (!fromRead || !toRead || !toRate) return null;
-
-  const perRequestUsd = (tokens * fromRead) / 1e6;
-  const targetPerRequestUsd = (tokens * toRead) / 1e6;
-  const savedPerRequest = perRequestUsd - targetPerRequestUsd;
-  if (savedPerRequest <= 0) return null;
-
   // An unobserved TTL is priced as the expensive one: never quote a cheaper switch
   // than the user will be billed.
   const oneHour = input.cacheTtl !== '5m';
-  const recacheUsd = (tokens * toRate.in * (oneHour ? 2 : 1.25)) / 1e6;
+  const perRequestUsd = requestUsd(input.model, tokens, oneHour);
+  const targetPerRequestUsd = requestUsd(to, tokens, oneHour);
+  const toRate = cost.rate(to);
+  if (perRequestUsd === null || targetPerRequestUsd === null || !toRate) return null;
+
+  const savedPerRequest = perRequestUsd - targetPerRequestUsd;
+  if (savedPerRequest <= 0) return null;
+
+  const cached = input.compactFirst === false ? tokens : Math.min(tokens, POST_COMPACT_TOKENS);
+  const recacheUsd = (cached * toRate.in * (oneHour ? 2 : 1.25)) / 1e6;
 
   return {
     from: cost.normalizeModel(input.model) || String(input.model),
@@ -101,6 +136,7 @@ function readPrompt(prompt) {
  * Down to Sonnet: the last SMALL_RUN completed turns were all small, and this prompt
  * is not complex, not reasoning-heavy and not a new work order.
  * Up to Opus: this prompt is any of those, or the last turn turned out complex.
+ * `fromPrompt` says the answer was reached before the turn ran, so it can be held.
  *
  * @param {{model?: string|null, recent?: object[], prompt?: string}} input
  * @returns {{want: 'sonnet'|'opus'|null, why: string, fromPrompt: boolean}}
@@ -123,11 +159,7 @@ function predictModel(input = {}) {
     if (promptNeedsOpus || run.length < SMALL_RUN || !run.every((t) => SMALL.has(t))) {
       return { want: null, why: '', fromPrompt: false };
     }
-    return {
-      want: 'sonnet',
-      why: `the last ${SMALL_RUN} turns were small and this one reads small`,
-      fromPrompt: false,
-    };
+    return { want: 'sonnet', why: `the last ${SMALL_RUN} turns were small and this one reads small`, fromPrompt: true };
   }
   if (family === 'sonnet') {
     if (promptNeedsOpus) return { want: 'opus', why: reasons.join(' and '), fromPrompt: true };
@@ -137,19 +169,21 @@ function predictModel(input = {}) {
 }
 
 /**
- * The advice for this prompt, and what to remember. Pure — the hook reads and writes.
+ * The advice for this prompt, decided before it runs, and what to remember. Pure —
+ * the hook reads and writes.
  *
- * Going down is a saving, so it is a line Claude relays at the end of its reply,
- * with the order that keeps the reasoning: `/compact` while still on Opus, so the
- * stronger model writes the summary and the re-cache shrinks, then `/model sonnet`.
- * Going up protects the outcome, so when this very prompt needs Opus the message is
- * held once and the user is asked to switch first; sending it again goes through.
- * Each recommendation is made once per model; it re-arms when the model changes.
+ * When the prompt itself shows which model it needs, the message is held, once,
+ * before any model sees it — a held prompt costs no tokens — and the user is told
+ * what to switch to. Sending it again runs it as it is. Stepping down names the
+ * order that keeps the reasoning: /compact while still on Opus (Opus writes the
+ * summary, and the re-cache on Sonnet is charged on the small result), then /model
+ * sonnet. 'advise' mode relays the same thing as the reply's last line instead. Each
+ * recommendation is made once per model; it re-arms when the model changes.
  *
  * @param {{
  *   model?: string|null, tokens?: number, cacheTtl?: '1h'|'5m'|null, recent?: object[],
  *   prompt?: string, sessionId?: string|null, now?: number,
- *   state?: {sessionId?: string|null, said?: string, model?: string, heldPrompt?: string}|null,
+ *   state?: {sessionId?: string|null, said?: string, model?: string}|null,
  *   settings?: {enabled?: boolean, budgetUsd?: number, hold?: boolean},
  * }} input
  * @returns {{message: string|null, hold: string|null, state: object|null}}
@@ -159,35 +193,45 @@ function adviseSessionSwitch(input = {}) {
   const sessionId = input.sessionId || null;
   const prior = input.state && input.state.sessionId === sessionId ? input.state : null;
   const quiet = { message: null, hold: null, state: prior };
-  if (!s.enabled) return quiet;
+  const prompt = String(input.prompt || '').trim();
+  // Slash commands are how the user acts on this advice; never stand in front of them.
+  if (!s.enabled || !prompt || prompt.startsWith('/')) return quiet;
 
   const model = String(input.model || '');
   const pred = predictModel(input);
   if (!pred.want) return quiet;
-  // Once per recommendation per model: the same advice is not repeated while the user
-  // is still deciding, and a new model starts the count again.
+  // Once per recommendation per model: sending a held prompt again runs it, and the
+  // same advice is not repeated while the user stays on the model they chose.
   if (prior && prior.said === pred.want && prior.model === model) return quiet;
   const state = { sessionId, said: pred.want, model, at: input.now || Date.now() };
 
   if (pred.want === 'sonnet') {
     const econ = switchEconomics(input);
     if (!econ || econ.savedPerRequest * MEDIAN_TURN_REQUESTS < s.budgetUsd) return quiet;
-    // Compacting first, while still on Opus, keeps the reasoning: Opus writes the
-    // summary, and the one-time re-cache on Sonnet is charged on the small result.
-    const message = relay(modelDownLine({
-      focus: input.prompt, why: pred.why, fromUsd: econ.perRequestUsd, toUsd: econ.targetPerRequestUsd,
-    }));
-    return { message, hold: null, state };
+    if (econ.paybackRequests > MEDIAN_TURN_REQUESTS) return quiet;
+    if (s.hold) {
+      return {
+        message: null,
+        hold: `[rcskills] Before this runs: ${pred.why}. Sonnet does it for ${money(econ.targetPerRequestUsd)} `
+          + `vs ${money(econ.perRequestUsd)} per message. To switch and keep the reasoning: ${compactCommand(prompt)}, `
+          + `then /model sonnet, then send this again. To run it on ${econ.from}, just send it again.${giveBack(prompt)}`,
+        state,
+      };
+    }
+    return {
+      message: relay(modelDownLine({ focus: prompt, why: pred.why, fromUsd: econ.perRequestUsd, toUsd: econ.targetPerRequestUsd })),
+      hold: null,
+      state,
+    };
   }
 
-  // Up to Opus. A prompt that itself needs Opus is held, once, before it runs on Sonnet.
-  if (pred.fromPrompt && s.hold && (!prior || prior.heldPrompt !== clip(input.prompt, 200))) {
+  if (pred.fromPrompt && s.hold) {
     return {
       message: null,
-      hold: `[rcskills] This session is on Sonnet and this message needs Opus: ${pred.why}. `
+      hold: `[rcskills] Before this runs: this session is on Sonnet and this message needs Opus — ${pred.why}. `
         + 'Run `/model opus`, then send it again. The reasoning carries over. '
-        + 'To run it on Sonnet anyway, just send it again.',
-      state: { ...state, heldPrompt: clip(input.prompt, 200) },
+        + `To run it on Sonnet anyway, just send it again.${giveBack(prompt)}`,
+      state,
     };
   }
   return { message: relay(modelUpLine({ why: pred.why })), hold: null, state };
@@ -212,8 +256,8 @@ function replaySwitchPolicy(sessions) {
       } else if (pred.want === 'opus') {
         model = 'claude-opus-5';
         out.up++;
-        if (pred.fromPrompt) out.held++;
       }
+      if (pred.want && pred.fromPrompt) out.held++;
       out.turns++;
       if (modelFamily(model) === 'sonnet') {
         out.onSonnet++;
@@ -233,7 +277,7 @@ function formatReplay(r) {
     `  turns on Sonnet:        ${r.onSonnet} (${r.turns ? Math.round((100 * r.onSonnet) / r.turns) : 0}% of all turns)`,
     `  complex work on Sonnet: ${r.complexOnSonnet} (${pct(r.complexOnSonnet)} of Sonnet turns) — the degradation risk`,
     `  moderate on Sonnet:     ${r.moderateOnSonnet} (${pct(r.moderateOnSonnet)})`,
-    `  switches:               ${r.down} down, ${r.up} up (${r.held} held before the work ran)`,
+    `  switches:               ${r.down} down, ${r.up} up (${r.held} decided before the work ran)`,
   ].join('\n');
 }
 
@@ -242,10 +286,14 @@ module.exports = {
   predictModel,
   readPrompt,
   switchEconomics,
+  requestUsd,
   replaySwitchPolicy,
   formatReplay,
   TARGET,
   MEDIAN_TURN_REQUESTS,
   SMALL_RUN,
   WORK_ORDER,
+  WRITE_TOKENS_PER_REQUEST,
+  OUTPUT_TOKENS_PER_REQUEST,
+  POST_COMPACT_TOKENS,
 };

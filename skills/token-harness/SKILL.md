@@ -42,17 +42,20 @@ suggested for the session instead, once its recent turns prove small. Older Opus
 Sonnet versions are never the cheapest adequate choice and are never routed to.
 
 **2b. Opus where it earns its price, and nowhere else.** For Opus sessions only (every
-Opus version), the hook predicts the model the next work needs. Down to Sonnet after 3
-measured small turns, when the prompt is not complex, reasoning-heavy or a new work
-order; up to Opus the moment one arrives. Replayed over 316 real turns, following it ran
-complex work on Sonnet 2% of the time, against 29% for judging by the prompt alone —
-`rcskills backtest` re-measures that rate on new sessions. Relay a down line at the end
-of the reply, in its order: `/compact` while still on Opus (Opus writes the summary and
-the re-cache shrinks), then `/model sonnet`. On Sonnet, a message that needs Opus is held
-once with `/model opus` — sending it again runs it anyway. Reasoning is bound to the
-model that wrote it, so the switch hook saves the readable reasoning, open tasks and files
-as text and the next prompt shows a `[handoff]` line: continue from it. Never switch the
-model for the user; Claude Code refuses a session re-pricing itself.
+Opus version), the hook reads each message before it runs and predicts the model it
+needs: Sonnet after 3 measured small turns, when the message is not complex,
+reasoning-heavy or a new work order; Opus the moment one arrives. Replayed over 316 real
+turns, following it ran complex work on Sonnet 2% of the time, against 29% for judging
+by the prompt alone — `rcskills backtest` re-measures that on new sessions. The message
+is held once, at no token cost, with the command and the message handed back; sending
+it again runs it as it is. Stepping down goes `/compact` first, while still on Opus, then
+`/model sonnet`: Opus writes the summary, and the re-cache is charged on the small
+result. That order matters most on Opus 5.5, which reads its cache at Sonnet's rate —
+the saving is output and writes, and it repays in ~5 messages only after a compact.
+Reasoning is bound to the model that wrote it, so the switch hook saves the readable
+reasoning, open tasks and files, and the next prompt shows a `[handoff]` line:
+continue from it. Never switch the model for the user; Claude Code refuses a session
+re-pricing itself.
 
 **3. Never dump memory into context.** Query it. Recall is BM25-ranked and hard-
 capped by a token budget, so cost cannot grow with store size. Unused notes decay
