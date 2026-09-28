@@ -30,11 +30,11 @@ const DEFAULTS = {
   },
   modelSwitch: {
     enabled: true,
-    // Suggest stepping an Opus session down only once a median turn on it would cost
-    // this much more than the same turn on Sonnet.
+    // Suggest moving an Opus session to the newest, cheapest Opus only once a median
+    // turn on it would cost this much more there.
     budgetUsd: 0.5,
-    // On Sonnet, hold a message that needs Opus once, so it does not run on the weaker
-    // model by accident. 'advise' only says so instead.
+    // Hold the first message on the dearer Opus once, at no token cost. 'advise' only
+    // says so instead.
     hold: true,
   },
   // Record each turn's outcome at Stop so the router learns (the strict profile).
@@ -268,10 +268,10 @@ function describe(settings) {
     : 'tells you after a reply until when the cache is cheap; never holds a message'}`);
   const m = settings.modelSwitch || DEFAULTS.modelSwitch;
   lines.push(`model switch:       ${m.enabled ? 'on' : 'off'} (${m.hold === false ? 'advise' : 'hold'}; Opus sessions only)`);
-  lines.push(`  down to Sonnet:   after 3 small turns, when a median turn saves $${m.budgetUsd}+; /compact first keeps the reasoning`);
-  lines.push('  up to Opus:       when a message reads as complex work, deep reasoning or new work');
-  lines.push(`  decided:          before each message runs; ${m.hold === false ? "said as the reply's last line" : 'held once, then the last line of every reply'}`);
-  lines.push('  never:            switches the model for you (Claude Code refuses a session re-pricing itself)');
+  lines.push(`  to the best Opus: from an older, dearer Opus, when a median turn saves $${m.budgetUsd}+; /compact first keeps the reasoning`);
+  lines.push('  never:            suggests Sonnet, or an older Opus');
+  lines.push(`  said:             before each message runs; ${m.hold === false ? "said as the reply's last line" : 'held once, then the last line of every reply'}`);
+  lines.push('                    or switches the model for you (Claude Code refuses a session re-pricing itself)');
   lines.push(`outcome learning:   ${settings.learning ? 'on (each turn recorded at Stop, no extra process)' : 'off'}`);
   lines.push(`config file:        ${configPath()}`);
   lines.push('env overrides:      TOKEN_HARNESS_COMPACT=on|off|dynamic|<tokens>, '

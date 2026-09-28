@@ -37,26 +37,22 @@ exact change, verifying command — then check what it did. `escalate -> opus` h
 the reasoning-heavy core to `rc-opus` when the session runs a weaker model. The
 router delegates down only on clear cheap evidence (score -2 or lower): vague work
 orders like "make it better" read short but are not small. Moderate work is never
-delegated on wording alone, because wording cannot tell it from complex; Sonnet is
-suggested for the session instead, once its recent turns prove small. Older Opus and
+delegated on wording alone, because wording cannot tell it from complex. Older Opus and
 Sonnet versions are never the cheapest adequate choice and are never routed to.
 
-**2b. Opus where it earns its price, and nowhere else.** For Opus sessions only (every
-Opus version), the hook reads each message before it runs and predicts the model it
-needs: Sonnet after 3 measured small turns, when the message is not complex,
-reasoning-heavy or a new work order; Opus the moment one arrives. Replayed over 344 real
-turns, following it ran complex work on Sonnet 2% of the time, against 29% for judging
-by the prompt alone — `rcskills backtest` re-measures that on new sessions. The message
-is held once, at no token cost, with the command and the message handed back; sending
-it again runs it as it is, and every later reply ends with the same `[next]` line while
-the advice stands. Stepping down goes `/compact` first, while still on Opus, then
-`/model sonnet`: Opus writes the summary, and the re-cache is charged on the small
-result. That order matters most on Opus 5.5, which reads its cache at Sonnet's rate —
-the saving is output and writes, and it repays in ~5 messages only after a compact.
-Reasoning is bound to the model that wrote it, so the switch hook saves the readable
-reasoning, open tasks and files, and the next prompt shows a `[handoff]` line:
-continue from it. Never switch the model for the user; Claude Code refuses a session
-re-pricing itself.
+**2b. Every Opus session on the best Opus.** Opus 5.5 is both the newest Opus and the
+cheapest ($4/$20, cache reads $0.20/M, against $5/$25 for Opus 5, 4.8, 4.7, 4.6 and 4.5
+and $15/$75 for 4.1 and 4), so moving to it never trades quality for price and there is
+nothing to guess from the prompt. The hook checks each message before it runs: on an
+older Opus, the first message is held once, at no token cost, with the command and the
+message handed back; every later reply ends with the same `[next]` line until the
+session moves. Sonnet is never suggested. Switch as `/compact` first, while still on the
+old model, then `/model claude-opus-5-5`: the cache belongs to one model, so the re-cache
+is charged on the small compacted result and repays in ~5 messages. Reasoning is bound
+to the exact model that wrote it, so the switch hook saves the readable reasoning, open
+tasks and files, and the next prompt shows a `[handoff]` line: continue from it. The
+best Opus is worked out from the price table, so a price change moves it. Never switch
+the model for the user; Claude Code refuses a session re-pricing itself.
 
 **3. Never dump memory into context.** Query it. Recall is BM25-ranked and hard-
 capped by a token budget, so cost cannot grow with store size. Unused notes decay

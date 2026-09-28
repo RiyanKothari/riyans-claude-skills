@@ -115,7 +115,7 @@ Pick the cheapest model that can do the task correctly. Check any prompt with
 |---|---|
 | `[router] delegate -> haiku` | Agent tool, `subagent_type: "rc-haiku"`, a self-contained brief (files, exact change, verify command); check its result |
 | `[router] escalate -> opus` | Hand the reasoning-heavy core to `rc-opus`; keep the mechanical parts inline |
-| `/model sonnet` suggestion | Tell the user in one sentence; the session model is theirs to change |
+| `/model` suggestion | Relay it as the last line; the session model is theirs to change |
 | no line | Handle inline |
 
 - `delegate -> haiku` fires only on clear cheap evidence (router score -2 or lower)

@@ -36,15 +36,10 @@ function compactLine({ tokens, perRequestUsd, focus }) {
   return `Next: ${compactCommand(focus)} — ${k(tokens)} of context${cost}.`;
 }
 
-/** @param {{focus?: string|null, why: string, fromUsd: number, toUsd: number}} a */
-function modelDownLine({ focus, why, fromUsd, toUsd }) {
-  return `Next: ${compactCommand(focus)}, then /model sonnet — ${why}; `
+/** @param {{focus?: string|null, from: string, to: string, fromUsd: number, toUsd: number}} a */
+function modelSwitchLine({ focus, from, to, fromUsd, toUsd }) {
+  return `Next: ${compactCommand(focus)}, then /model ${to} — newer and cheaper than ${from}; `
     + `${usd(toUsd)} vs ${usd(fromUsd)} per message.`;
-}
-
-/** @param {{why: string}} a */
-function modelUpLine({ why }) {
-  return `Before your next message: /model opus — ${why}.`;
 }
 
 /** Why the last message paid to re-send its context, and what avoids it next time. */
@@ -80,5 +75,5 @@ function mergeNext(lines) {
 }
 
 module.exports = {
-  TAG, relay, mergeNext, compactCommand, compactLine, modelDownLine, modelUpLine, rewriteLine, stayCheapLine,
+  TAG, relay, mergeNext, compactCommand, compactLine, modelSwitchLine, rewriteLine, stayCheapLine,
 };

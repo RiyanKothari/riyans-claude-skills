@@ -48,6 +48,8 @@ function run(s, mode, input, env = {}) {
       TOKEN_HARNESS_CONFIG: path.join(s.dir, 'no-config.json'),
       TOKEN_HARNESS_COMPACT: 'off',
       TOKEN_HARNESS_CACHE_GUARD: '',
+      // An Opus 5 session is also told to move to Opus 5.5; that advice has its own tests.
+      TOKEN_HARNESS_MODEL_SWITCH: 'off',
       SMART_MEMORY_PATH: '',
       ...env,
     },

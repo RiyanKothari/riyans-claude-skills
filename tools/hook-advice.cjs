@@ -58,10 +58,9 @@ module.exports = function createAdvice(env) {
   }
 
   /**
-   * Which model the next work should run on, for Opus and Sonnet sessions. Down to
-   * Sonnet after measured small work, as a line relayed at the end of the reply; up to
-   * Opus before work that needs it, holding the message once so it does not run on the
-   * weaker model. `session-switch.cjs` owns the rule and its backtest.
+   * Which Opus this session should be on: an older, dearer Opus is told to move to the
+   * newest, cheapest one, held once and then relayed after every message.
+   * `session-switch.cjs` owns the rule.
    */
   function modelSwitchAdvice(activity, input, prompt) {
     const quiet = { message: null, hold: null };
@@ -178,8 +177,10 @@ module.exports = function createAdvice(env) {
     const router = req('model-router/index.cjs');
     const mod = req('model-router/switch-handoff.cjs');
     if (!router || !mod) return;
-    const from = router.modelFamily(input.from_model);
-    const to = router.modelFamily(input.to_model);
+    // Reasoning is bound to the exact model that wrote it, so any change strands it —
+    // Opus 5 to Opus 5.5 as much as Opus to Sonnet.
+    const from = router.modelFamily(input.from_model) && String(input.from_model);
+    const to = router.modelFamily(input.to_model) && String(input.to_model);
     if (!from || !to || from === to) return;
     const activity = sessionActivity(input, '');
     const record = activity && mod.captureSwitch(activity.handoff, {

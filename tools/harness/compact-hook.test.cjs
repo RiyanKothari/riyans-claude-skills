@@ -48,6 +48,8 @@ function recall(p, env = {}) {
       CLAUDE_PROJECT_DIR: p.dir,
       TOKEN_HARNESS_CONFIG: path.join(p.dir, 'no-config.json'),
       TOKEN_HARNESS_COMPACT: '',
+      // An Opus 5 session is also told to move to Opus 5.5; that advice has its own tests.
+      TOKEN_HARNESS_MODEL_SWITCH: 'off',
       TOKEN_HARNESS_COMPACT_BUDGET: '',
       TOKEN_HARNESS_COMPACT_REMIND: '',
       ...env,

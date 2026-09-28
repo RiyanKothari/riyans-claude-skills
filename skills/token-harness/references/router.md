@@ -11,7 +11,7 @@ a calibrated probability.
 |---|---|---|
 | trivial | Haiku 4.5 | Yes, at score -2 or lower: `delegate -> haiku` (`rc-haiku`) |
 | simple | Haiku 4.5 | No: a "simple" rating is always a low-confidence guess |
-| moderate | Sonnet 5 | No: wording cannot tell it from complex, so `/model sonnet` is suggested from measured turns |
+| moderate | Sonnet 5 | No: wording cannot tell it from complex |
 | complex | Opus 5 | Up only: a Haiku or Sonnet session hands reasoning-heavy work to `rc-opus` |
 
 ### Why delegation is a score threshold
@@ -24,13 +24,12 @@ small. Requiring score -2 or lower gave 0 false delegations in that sample and
 73.4% correct decisions instead of 62.9%, at the cost of more missed savings. Only
 9 turns in the sample met the bar, so treat the precision as strong but not proven.
 
-### Why Sonnet is suggested, not delegated
+### Which Opus a session runs on
 
-Of 29 prompts predicted "moderate", 17 turned out complex, so delegating them to
-Sonnet on wording would under-route most of the time. What the session actually did
-is reliable: when its last 6 completed turns on Opus or Fable were all small, and at
-least 3 were real edits or commands, the hook tells the user once that `/model
-sonnet` or `/model opusplan` would handle the stretch for about 60% less.
+Moderate work is never delegated on wording alone: of 29 prompts predicted "moderate",
+17 turned out complex. The session model is advised separately, for Opus sessions only:
+an older Opus is told to move to Opus 5.5, which is newer and cheaper, so the move never
+costs quality. Sonnet is never suggested for the session.
 
 ### Models never routed to
 

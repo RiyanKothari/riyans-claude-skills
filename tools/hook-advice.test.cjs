@@ -48,16 +48,17 @@ test('the compaction line names the work in hand and remembers it was said', () 
   e.clean();
 });
 
-test('model advice holds Opus work on Sonnet, and the handoff survives the switch', () => {
+test('model advice moves an older Opus to Opus 5.5, and the handoff survives the switch', () => {
   const activity = {
-    tokens: 150000, model: 'claude-sonnet-5', recent: [small],
+    tokens: 150000, model: 'claude-opus-5', recent: [small],
     handoff: { prompts: ['build it'], files: [], lastText: 'Planned.', thinking: ['Stream, do not buffer.'], todos: ['write the writer'] },
   };
   const e = env(activity);
   const held = e.advice.modelSwitchAdvice(activity, { session_id: 's' }, 'build the export pipeline');
-  assert.match(held.hold, /\/model opus/);
+  assert.match(held.hold, /\/model claude-opus-5-5/);
 
-  e.advice.captureSwitchHandoff({ session_id: 's', from_model: 'claude-opus-5', to_model: 'claude-sonnet-5' });
+  // Reasoning is bound to the exact model, so an Opus-to-Opus switch strands it too.
+  e.advice.captureSwitchHandoff({ session_id: 's', from_model: 'claude-opus-5', to_model: 'claude-opus-5-5' });
   const line = e.advice.switchHandoffLine({ session_id: 's' });
   assert.match(line, /\[handoff\].*Stream, do not buffer\..*write the writer/);
   assert.strictEqual(e.advice.switchHandoffLine({ session_id: 's' }), null, 'once');

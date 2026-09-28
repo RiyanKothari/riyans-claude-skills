@@ -187,7 +187,6 @@ function modeSwitch() {
   process.exit(0);
 }
 
-/** A real change of model family strands the old model's reasoning; keep it as text. */
 function modeRecall() {
   const input = parseInput();
   const prompt = String(input.prompt || '').trim();
@@ -220,8 +219,7 @@ function modeRecall() {
 
   const neighbors = advice.findNeighbors(store, prompt, scoreMod);
 
-  // The session-model advice already says Opus; an escalate line on top would repeat it.
-  if (router && !(modelAdvice.message && /\/model opus/.test(modelAdvice.message))) {
+  if (router) {
     try {
       const note = advice.routerNote(router.recommend(prompt, {
         repoRoot: ROOT,

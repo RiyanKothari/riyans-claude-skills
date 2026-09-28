@@ -254,21 +254,22 @@ test('the real hooks step Opus down after small work, and carry the reasoning ac
   // The prompt is read before it runs: small work on Opus is held once, at no token cost.
   const held = JSON.parse(recall('and helper four?'));
   assert.equal(held.decision, 'block');
-  assert.match(held.reason, /^\[rcskills\] Before this runs: .*\/compact keep decisions and open tasks for "and helper four\?", then \/model sonnet, then send this again/);
+  assert.match(held.reason, /^\[rcskills\] Before this runs: .*\/compact keep decisions and open tasks for "and helper four\?", then \/model claude-opus-5-5, then send this again/);
   const resent = recall('and helper four?');
   assert.doesNotMatch(resent, /"decision"/, 'sending it again runs it');
-  assert.match(resent, /^\[next\] .*then \/model sonnet/m, 'and the reply still ends with the switch');
+  assert.match(resent, /^\[next\] .*then \/model claude-opus-5-5/m, 'and the reply still ends with the switch');
   assert.doesNotMatch(recall('/compact keep decisions'), /"decision"/, 'a slash command is never held');
 
-  // The user switches. Nothing is written for a same-family change.
+  // The user switches. Reasoning is bound to the exact model, so even Opus to Opus
+  // strands it; a "switch" to the same model writes nothing.
   const switchHook = (from, to) => runHook(HOOK, ['switch'], dir, JSON.stringify({
     from_model: from, to_model: to, source: 'command', transcript_path: tp, session_id: 'sw', context_tokens: 200000,
   }), hookEnv);
+  switchHook('claude-opus-5', 'claude-opus-5');
+  assert.doesNotMatch(recall('still there?'), /\[handoff\]/, 'no change strands nothing');
   switchHook('claude-opus-5', 'claude-opus-5-5');
-  assert.doesNotMatch(recall('still there?'), /\[handoff\]/, 'Opus to Opus strands nothing');
-  switchHook('claude-opus-5', 'claude-sonnet-5');
   const after = recall('carry on');
-  assert.match(after, /\[handoff\] The model changed from claude-opus-5 to claude-sonnet-5/);
+  assert.match(after, /\[handoff\] The model changed from claude-opus-5 to claude-opus-5-5/);
   assert.match(after, /the cache key must include the locale/, 'the reasoning survives as text');
   assert.match(after, /open tasks: add locale to the cache key/);
   assert.doesNotMatch(recall('and again'), /\[handoff\]/, 'shown once');
