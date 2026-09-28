@@ -92,13 +92,15 @@ test('with session advice off, a sonnet session still hands reasoning-heavy work
   s.clean();
 });
 
-test('a stretch of proven small work on opus suggests /model sonnet, once', () => {
+test('a stretch of proven small work on opus suggests /model sonnet on every message, holding only once', () => {
   const lines = [];
   for (let i = 0; i < 6; i++) lines.push(human(`small change ${i}`), edit(`/src/file${i}.js`));
   lines.push(usage('claude-opus-5'));
   const s = session(lines);
   assert.match(recall(s, 'next small thing'), /\/model sonnet/);
-  assert.doesNotMatch(recall(s, 'another small thing'), /\/model sonnet/, 'once per session');
+  const later = recall(s, 'another small thing');
+  assert.match(later, /^\[next\] .*\/model sonnet/m, 'prompted again after the next message');
+  assert.doesNotMatch(later, /"decision":"block"/, 'but never held twice');
   s.clean();
 });
 

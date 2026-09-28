@@ -127,12 +127,13 @@ test('Opus work on Sonnet is held before it runs', () => {
   assert.match(r.hold, /\/model opus/);
 });
 
-test('sending a held message again runs it, and the advice is not repeated on that model', () => {
+test('sending a held message again runs it, and every later message still says so', () => {
   const first = advise({ model: OPUS55 });
   assert.ok(first.hold);
   const again = advise({ model: OPUS55, state: first.state });
   assert.strictEqual(again.hold, null);
-  assert.strictEqual(again.message, null);
+  assert.match(String(again.message), /^\[next\] End your reply with exactly this line: "Next: \/compact .*then \/model sonnet/);
+  assert.strictEqual(advise({ model: OPUS55, state: again.state }).hold, null, 'never held twice');
   assert.ok(advise({ model: OPUS, state: first.state }).hold, 'a new model starts again');
   assert.ok(advise({ model: OPUS55, state: first.state, sessionId: 's2' }).hold, 'another session is another conversation');
 });

@@ -40,7 +40,7 @@ const OUTPUT_TOKENS_PER_REQUEST = 2500;
 const POST_COMPACT_TOKENS = 40000;
 
 /**
- * Completed small turns needed before stepping down. Replayed over 316 real turns,
+ * Completed small turns needed before stepping down. Replayed over 344 real turns,
  * the prompt alone put complex work on Sonnet 29% of the time — wording cannot see
  * how big a job will get — while 3 measured small turns plus a small-reading prompt
  * put it there 2% of the time. 4 turns was no safer; 2 doubled the misses.
@@ -177,8 +177,12 @@ function predictModel(input = {}) {
  * what to switch to. Sending it again runs it as it is. Stepping down names the
  * order that keeps the reasoning: /compact while still on Opus (Opus writes the
  * summary, and the re-cache on Sonnet is charged on the small result), then /model
- * sonnet. 'advise' mode relays the same thing as the reply's last line instead. Each
- * recommendation is made once per model; it re-arms when the model changes.
+ * sonnet. 'advise' mode relays the same thing as the reply's last line instead.
+ *
+ * A message is held at most once per recommendation per model: sending it again runs
+ * it. From then on, every message the recommendation still stands gets it as the
+ * reply's last line (~40 tokens), so the user is prompted after each message rather
+ * than once, and is never held twice. A model change re-arms the hold.
  *
  * @param {{
  *   model?: string|null, tokens?: number, cacheTtl?: '1h'|'5m'|null, recent?: object[],
@@ -200,16 +204,15 @@ function adviseSessionSwitch(input = {}) {
   const model = String(input.model || '');
   const pred = predictModel(input);
   if (!pred.want) return quiet;
-  // Once per recommendation per model: sending a held prompt again runs it, and the
-  // same advice is not repeated while the user stays on the model they chose.
-  if (prior && prior.said === pred.want && prior.model === model) return quiet;
-  const state = { sessionId, said: pred.want, model, at: input.now || Date.now() };
+  const repeat = Boolean(prior && prior.said === pred.want && prior.model === model);
+  const state = repeat ? prior : { sessionId, said: pred.want, model, at: input.now || Date.now() };
+  const hold = s.hold && !repeat;
 
   if (pred.want === 'sonnet') {
     const econ = switchEconomics(input);
     if (!econ || econ.savedPerRequest * MEDIAN_TURN_REQUESTS < s.budgetUsd) return quiet;
     if (econ.paybackRequests > MEDIAN_TURN_REQUESTS) return quiet;
-    if (s.hold) {
+    if (hold) {
       return {
         message: null,
         hold: `[rcskills] Before this runs: ${pred.why}. Sonnet does it for ${money(econ.targetPerRequestUsd)} `
@@ -225,7 +228,7 @@ function adviseSessionSwitch(input = {}) {
     };
   }
 
-  if (pred.fromPrompt && s.hold) {
+  if (pred.fromPrompt && hold) {
     return {
       message: null,
       hold: `[rcskills] Before this runs: this session is on Sonnet and this message needs Opus — ${pred.why}. `

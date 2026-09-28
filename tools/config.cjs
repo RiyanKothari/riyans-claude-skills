@@ -270,7 +270,7 @@ function describe(settings) {
   lines.push(`model switch:       ${m.enabled ? 'on' : 'off'} (${m.hold === false ? 'advise' : 'hold'}; Opus sessions only)`);
   lines.push(`  down to Sonnet:   after 3 small turns, when a median turn saves $${m.budgetUsd}+; /compact first keeps the reasoning`);
   lines.push('  up to Opus:       when a message reads as complex work, deep reasoning or new work');
-  lines.push(`  decided:          before each message runs; ${m.hold === false ? "said as the reply's last line" : 'the message is held once and handed back'}`);
+  lines.push(`  decided:          before each message runs; ${m.hold === false ? "said as the reply's last line" : 'held once, then the last line of every reply'}`);
   lines.push('  never:            switches the model for you (Claude Code refuses a session re-pricing itself)');
   lines.push(`outcome learning:   ${settings.learning ? 'on (each turn recorded at Stop, no extra process)' : 'off'}`);
   lines.push(`config file:        ${configPath()}`);

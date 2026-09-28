@@ -43,6 +43,8 @@ test('the compaction line names the work in hand and remembers it was said', () 
   assert.match(line, /^\[next\] .*\/compact keep decisions and open tasks for "the export"/);
   assert.strictEqual(e.read(e.p('compact.json')).advisedAt, 500000);
   assert.match(e.advice.compactPrompt(900000, { session_id: 't' }, activity), /for "earlier ask"/, 'falls back to the last ask');
+  const followUp = { ...activity, handoff: { prompts: ['build the export step', 'how do you want to proceed'] } };
+  assert.match(e.advice.compactPrompt(900000, { session_id: 'u' }, followUp), /for "build the export step"/, 'names the work, not the follow-up');
   e.clean();
 });
 

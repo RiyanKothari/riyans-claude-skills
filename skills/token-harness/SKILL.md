@@ -44,11 +44,12 @@ Sonnet versions are never the cheapest adequate choice and are never routed to.
 **2b. Opus where it earns its price, and nowhere else.** For Opus sessions only (every
 Opus version), the hook reads each message before it runs and predicts the model it
 needs: Sonnet after 3 measured small turns, when the message is not complex,
-reasoning-heavy or a new work order; Opus the moment one arrives. Replayed over 316 real
+reasoning-heavy or a new work order; Opus the moment one arrives. Replayed over 344 real
 turns, following it ran complex work on Sonnet 2% of the time, against 29% for judging
 by the prompt alone — `rcskills backtest` re-measures that on new sessions. The message
 is held once, at no token cost, with the command and the message handed back; sending
-it again runs it as it is. Stepping down goes `/compact` first, while still on Opus, then
+it again runs it as it is, and every later reply ends with the same `[next]` line while
+the advice stands. Stepping down goes `/compact` first, while still on Opus, then
 `/model sonnet`: Opus writes the summary, and the re-cache is charged on the small
 result. That order matters most on Opus 5.5, which reads its cache at Sonnet's rate —
 the saving is output and writes, and it repays in ~5 messages only after a compact.

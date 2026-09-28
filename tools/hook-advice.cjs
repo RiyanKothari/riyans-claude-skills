@@ -29,7 +29,13 @@ module.exports = function createAdvice(env) {
    */
   function lastAsk(activity) {
     const asks = activity && activity.handoff && activity.handoff.prompts;
-    return asks && asks.length ? asks[asks.length - 1] : null;
+    if (!asks || !asks.length) return null;
+    // Name the work in hand, not a follow-up like "how do you want to proceed": the
+    // latest ask that starts work, else the latest one.
+    const switchMod = req('model-router/session-switch.cjs');
+    const work = switchMod && switchMod.WORK_ORDER;
+    for (let i = asks.length - 1; i >= 0; i--) if (work && work.test(asks[i])) return asks[i];
+    return asks[asks.length - 1];
   }
 
   function compactPrompt(tokens, input, activity, extra = {}) {

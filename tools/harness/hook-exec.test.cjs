@@ -257,7 +257,7 @@ test('the real hooks step Opus down after small work, and carry the reasoning ac
   assert.match(held.reason, /^\[rcskills\] Before this runs: .*\/compact keep decisions and open tasks for "and helper four\?", then \/model sonnet, then send this again/);
   const resent = recall('and helper four?');
   assert.doesNotMatch(resent, /"decision"/, 'sending it again runs it');
-  assert.doesNotMatch(resent, /\/model sonnet/, 'and the advice is not repeated');
+  assert.match(resent, /^\[next\] .*then \/model sonnet/m, 'and the reply still ends with the switch');
   assert.doesNotMatch(recall('/compact keep decisions'), /"decision"/, 'a slash command is never held');
 
   // The user switches. Nothing is written for a same-family change.
