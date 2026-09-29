@@ -2,8 +2,9 @@
 
 const { DEFAULTS } = require('../config.cjs');
 const cost = require('./cost.cjs');
-const { modelFamily } = require('./index.cjs');
-const { relay, compactCommand, modelSwitchLine } = require('../next-command.cjs');
+const { classify, modelFamily, HARD_SIGNALS } = require('./index.cjs');
+const { actualTier } = require('../outcome/score.cjs');
+const { relay, compactCommand, modelSwitchLine, modelUpLine } = require('../next-command.cjs');
 
 const DEFAULT_SETTINGS = DEFAULTS.modelSwitch;
 
@@ -32,11 +33,22 @@ const POST_COMPACT_TOKENS = 40000;
 const RANK_TOKENS = 100000;
 
 /**
- * A new work order: the /compact focus names the latest one, not a follow-up like
- * "how do you want to proceed".
+ * Completed small turns needed before stepping down to Sonnet. Replayed over 344 real
+ * turns, the prompt alone put complex work on Sonnet 29% of the time — wording cannot
+ * see how big a job will get — while 3 measured small turns plus a small-reading
+ * prompt put it there 2% of the time. 1 turn: 13%, 2: 6%, 4: no safer.
+ */
+const SMALL_RUN = 3;
+
+/**
+ * A new work order reads short but starts big: "add a setting…", "measure how
+ * often…", "architect the product…" were most of the complex turns the tier rule
+ * sent to Sonnet. These verbs keep a session on Opus, or bring it back. A trivial
+ * edit ("add a comment", "rename") is exempt — the router already knows those.
  */
 const WORK_ORDER = /\b(add|build|implement|create|make|design|architect|plan|planning|measure|integrate|refactor|rewrite|migrate|set ?up|develop|improve|optimi[sz]e|redesign|port|convert|automate|research|audit|investigate|increase|reduce)\b/i;
 
+const SMALL = new Set(['trivial', 'simple']);
 const money = (n) => `$${n.toFixed(2)}`;
 
 /**
@@ -62,22 +74,23 @@ function requestUsd(model, tokens, oneHour) {
 }
 
 /**
- * Every priced Opus model, newest first — the price table lists each family newest
- * first, and that order is the only notion of "newer" this code trusts.
+ * Every priced model of a family, newest first — the price table lists each family
+ * newest first, and that order is the only notion of "newer" this code trusts.
+ * @param {string} family
  */
-function opusModels() {
-  return Object.keys(cost.PRICING).filter((id) => modelFamily(id) === 'opus');
+function familyModels(family) {
+  return Object.keys(cost.PRICING).filter((id) => modelFamily(id) === family);
 }
 
 /**
- * The Opus a session should be on: the cheapest per request, the newest on a tie.
- * Today that is Opus 5.5 ($4/$20, cache reads $0.20/M) against $5/$25 for Opus 5,
- * 4.8, 4.7, 4.6 and 4.5, and $15/$75 for 4.1 and 4.
+ * The model of a family a session should be on: the cheapest per request, the newest
+ * on a tie. Today: Opus 5.5 ($4/$20, reads $0.20/M) and Sonnet 5.5 ($2/$10).
+ * @param {string} family
  */
-function bestOpus() {
+function bestOf(family) {
   let best = null;
   let bestUsd = Infinity;
-  for (const id of opusModels()) {
+  for (const id of familyModels(family)) {
     const usd = requestUsd(id, RANK_TOKENS, true);
     if (usd !== null && usd < bestUsd) {
       best = id;
@@ -86,6 +99,8 @@ function bestOpus() {
   }
   return best;
 }
+const bestOpus = () => bestOf('opus');
+const bestSonnet = () => bestOf('sonnet');
 
 /**
  * What switching this session from `model` to `target` is worth per request, what the
@@ -97,7 +112,7 @@ function switchEconomics(input = {}) {
   const tokens = Number(input.tokens);
   if (!Number.isFinite(tokens) || tokens <= 0) return null;
 
-  const to = input.target || bestOpus();
+  const to = input.target || bestSonnet();
   // An unobserved TTL is priced as the expensive one: never quote a cheaper switch
   // than the user will be billed.
   const oneHour = input.cacheTtl !== '5m';
@@ -124,42 +139,99 @@ function switchEconomics(input = {}) {
   };
 }
 
+/** What a prompt says about the work it is about to start. */
+function readPrompt(prompt) {
+  const text = String(prompt || '');
+  const c = classify(text);
+  const trivialEdit = c.matched.some((m) => m.signal === 'trivial-edit');
+  return {
+    tier: c.tier,
+    hard: c.matched.some((m) => HARD_SIGNALS.has(m.signal)),
+    workOrder: WORK_ORDER.test(text) && !trivialEdit,
+  };
+}
+
 /**
- * Which Opus this session should be on. Only Opus sessions get an answer, and only
- * ever a move to an Opus that is both newer and cheaper — so no message can land on
- * a weaker model, and there is nothing to guess from the prompt. Sonnet is never
- * suggested. A model newer than the price table is left alone.
- *
- * @param {{model?: string|null}} input
- * @returns {{want: string|null, why: string}}
+ * A move within a family to a model that is both newer and cheaper, or null. Such a
+ * move never costs quality, so it needs nothing from the prompt.
+ * @param {string|null|undefined} model
  */
-function predictModel(input = {}) {
-  const none = { want: null, why: '' };
-  if (modelFamily(input.model) !== 'opus') return none;
-  const from = cost.normalizeModel(input.model);
-  const to = bestOpus();
-  const order = opusModels();
-  if (!from || !to || from === to || !order.includes(from)) return none;
-  if (order.indexOf(to) > order.indexOf(from)) return none; // never step back a version
+function sameFamilyUpgrade(model) {
+  const family = modelFamily(model);
+  const from = cost.normalizeModel(model);
+  if (!family || !from) return null;
+  const to = bestOf(family);
+  const order = familyModels(family);
+  if (!to || from === to || !order.includes(from) || order.indexOf(to) > order.indexOf(from)) return null;
   const a = requestUsd(from, RANK_TOKENS, true);
   const b = requestUsd(to, RANK_TOKENS, true);
-  if (a === null || b === null || b >= a) return none;
-  return { want: to, why: `${to} is newer and cheaper than ${from}` };
+  return a !== null && b !== null && b < a ? to : null;
+}
+
+/**
+ * Which model this message should run on, judged from what the session has really
+ * done and what this prompt asks for. Only Opus and Sonnet sessions get an answer.
+ *
+ * Opus → the best Sonnet: the last SMALL_RUN completed turns were all small, and this
+ * prompt is not complex, not reasoning-heavy and not a new work order.
+ * Sonnet → the best Opus: this prompt is any of those, or the last turn turned out
+ * complex.
+ * Otherwise an older, dearer model of the same family → its newest, cheapest one.
+ * `fromPrompt` says the answer was reached before the turn ran, so it can be held.
+ *
+ * @param {{model?: string|null, recent?: object[], prompt?: string}} input
+ * @returns {{want: string|null, dir: 'down'|'up'|'same'|null, why: string, fromPrompt: boolean}}
+ */
+function predictModel(input = {}) {
+  const none = { want: null, dir: null, why: '', fromPrompt: false };
+  const family = modelFamily(input.model);
+  const recent = Array.isArray(input.recent) ? input.recent : [];
+  const tiers = recent.map((t) => actualTier(t));
+  const p = readPrompt(input.prompt);
+
+  const reasons = [];
+  if (p.tier === 'complex') reasons.push('it reads as complex work');
+  if (p.hard) reasons.push('it asks for deep reasoning');
+  if (p.workOrder) reasons.push('it starts new work');
+  const promptNeedsOpus = reasons.length > 0;
+  const lastComplex = tiers.length > 0 && tiers[tiers.length - 1] === 'complex';
+  const upgrade = sameFamilyUpgrade(input.model);
+  const same = upgrade
+    ? { want: upgrade, dir: /** @type {'same'} */ ('same'), why: `${upgrade} is newer and cheaper than ${cost.normalizeModel(input.model)}`, fromPrompt: true }
+    : none;
+
+  if (family === 'opus') {
+    const run = tiers.slice(-SMALL_RUN);
+    const sonnet = bestSonnet();
+    if (sonnet && !promptNeedsOpus && run.length === SMALL_RUN && run.every((t) => SMALL.has(t))) {
+      return { want: sonnet, dir: 'down', why: `the last ${SMALL_RUN} turns were small and this one reads small`, fromPrompt: true };
+    }
+    return same;
+  }
+  if (family === 'sonnet') {
+    const opus = bestOpus();
+    if (opus && promptNeedsOpus) return { want: opus, dir: 'up', why: reasons.join(' and '), fromPrompt: true };
+    if (opus && lastComplex) return { want: opus, dir: 'up', why: 'the last turn turned out to be complex', fromPrompt: false };
+    return same;
+  }
+  return none;
 }
 
 /**
  * The advice for this prompt, decided before it runs, and what to remember. Pure —
  * the hook reads and writes.
  *
- * The first message that would run on a dearer, older Opus is held — a held prompt
- * costs no tokens — with the order that keeps the reasoning: /compact while still on
- * the old model, then /model <best Opus>. Sending it again runs it as it is. From then
- * on, every reply ends with the same line while the session stays on that model, so
- * the user is prompted after each message and never held twice. 'advise' mode only
- * relays the line. A model change re-arms the hold.
+ * Every message is judged on its own: small work on Opus → Sonnet 5.5, Opus work on
+ * Sonnet → Opus 5.5, an older model → the newest of its family. The first time a
+ * recommendation is made on a model, the message is held — a held prompt costs no
+ * tokens — and handed back; sending it again runs it. While the same recommendation
+ * stands, every later reply ends with it (~40 tokens) and nothing is held again. A
+ * model change re-arms the hold. Stepping down names the order that keeps the
+ * reasoning: /compact while still on the old model, then /model. 'advise' mode never
+ * holds.
  *
  * @param {{
- *   model?: string|null, tokens?: number, cacheTtl?: '1h'|'5m'|null,
+ *   model?: string|null, tokens?: number, cacheTtl?: '1h'|'5m'|null, recent?: object[],
  *   prompt?: string, sessionId?: string|null, now?: number,
  *   state?: {sessionId?: string|null, said?: string, model?: string}|null,
  *   settings?: {enabled?: boolean, budgetUsd?: number, hold?: boolean},
@@ -176,38 +248,102 @@ function adviseSessionSwitch(input = {}) {
   if (!s.enabled || !prompt || prompt.startsWith('/')) return quiet;
 
   const model = String(input.model || '');
+  const from = cost.normalizeModel(model) || model;
   const pred = predictModel(input);
   if (!pred.want) return quiet;
+
+  // At most one hold per model, whatever it recommended: alternating small and big
+  // messages must not hold every other one. Every message still gets its line.
+  const heldHere = Boolean(prior && prior.model === model);
+  const state = heldHere ? { ...prior, said: pred.want } : { sessionId, said: pred.want, model, at: input.now || Date.now() };
+  const hold = s.hold && !heldHere;
+
+  if (pred.dir === 'up') {
+    if (pred.fromPrompt && hold) {
+      return {
+        message: null,
+        hold: `[rcskills] Before this runs: this message needs Opus — ${pred.why}. Run \`/model ${pred.want}\`, `
+          + `then send it again. The reasoning carries over. To run it on ${from} anyway, just send it again.${giveBack(prompt)}`,
+        state,
+      };
+    }
+    return { message: relay(modelUpLine({ to: pred.want, why: pred.why })), hold: null, state };
+  }
+
+  // Down, or a newer and cheaper model of the same family: it must pay.
   const econ = switchEconomics({ ...input, target: pred.want });
   if (!econ || econ.savedPerRequest * MEDIAN_TURN_REQUESTS < s.budgetUsd) return quiet;
   if (econ.paybackRequests > MEDIAN_TURN_REQUESTS) return quiet;
-
-  const repeat = Boolean(prior && prior.said === pred.want && prior.model === model);
-  const state = repeat ? prior : { sessionId, said: pred.want, model, at: input.now || Date.now() };
-
-  if (s.hold && !repeat) {
+  if (hold) {
     return {
       message: null,
-      hold: `[rcskills] Before this runs: ${pred.why} — ${money(econ.targetPerRequestUsd)} vs `
+      hold: `[rcskills] Before this runs: ${pred.why} — ${econ.to} costs ${money(econ.targetPerRequestUsd)} vs `
         + `${money(econ.perRequestUsd)} per message. To switch and keep the reasoning: ${compactCommand(prompt)}, `
         + `then /model ${econ.to}, then send this again. To stay on ${econ.from}, just send it again.${giveBack(prompt)}`,
       state,
     };
   }
   return {
-    message: relay(modelSwitchLine({ focus: prompt, from: econ.from, to: econ.to, fromUsd: econ.perRequestUsd, toUsd: econ.targetPerRequestUsd })),
+    message: relay(modelSwitchLine({ focus: prompt, to: econ.to, why: pred.why, fromUsd: econ.perRequestUsd, toUsd: econ.targetPerRequestUsd })),
     hold: null,
     state,
   };
 }
 
+/**
+ * Replay the policy over real sessions, in order, as if every recommendation had
+ * been followed. The number that matters is complex turns that ran on Sonnet: each
+ * is a job a weaker model did that Opus should have done.
+ *
+ * @param {Array<Array<{prompt: string, edits: number, commands: number, reads: number, distinctFiles: number}>>} sessions
+ */
+function replaySwitchPolicy(sessions) {
+  const out = { turns: 0, onSonnet: 0, complexOnSonnet: 0, moderateOnSonnet: 0, down: 0, up: 0, held: 0 };
+  for (const turns of sessions) {
+    let model = bestOpus() || 'claude-opus-5-5';
+    for (let i = 0; i < turns.length; i++) {
+      const pred = predictModel({ model, recent: turns.slice(Math.max(0, i - 8), i), prompt: turns[i].prompt });
+      if (pred.want) {
+        model = pred.want;
+        if (pred.dir === 'down') out.down++;
+        if (pred.dir === 'up') out.up++;
+        if (pred.fromPrompt) out.held++;
+      }
+      out.turns++;
+      if (modelFamily(model) === 'sonnet') {
+        out.onSonnet++;
+        const tier = actualTier(turns[i]);
+        if (tier === 'complex') out.complexOnSonnet++;
+        if (tier === 'moderate') out.moderateOnSonnet++;
+      }
+    }
+  }
+  return out;
+}
+
+function formatReplay(r) {
+  const pct = (n) => (r.onSonnet ? `${Math.round((100 * n) / r.onSonnet)}%` : '0%');
+  return [
+    `model switching, replayed over ${r.turns} turns as if every recommendation were followed:`,
+    `  turns on Sonnet:        ${r.onSonnet} (${r.turns ? Math.round((100 * r.onSonnet) / r.turns) : 0}% of all turns)`,
+    `  complex work on Sonnet: ${r.complexOnSonnet} (${pct(r.complexOnSonnet)} of Sonnet turns) — the degradation risk`,
+    `  moderate on Sonnet:     ${r.moderateOnSonnet} (${pct(r.moderateOnSonnet)})`,
+    `  switches:               ${r.down} down, ${r.up} up (${r.held} decided before the work ran)`,
+  ].join('\n');
+}
+
 module.exports = {
   adviseSessionSwitch,
   predictModel,
+  readPrompt,
   bestOpus,
+  bestSonnet,
   switchEconomics,
   requestUsd,
+  replaySwitchPolicy,
+  formatReplay,
   MEDIAN_TURN_REQUESTS,
+  SMALL_RUN,
   WORK_ORDER,
   WRITE_TOKENS_PER_REQUEST,
   OUTPUT_TOKENS_PER_REQUEST,

@@ -100,7 +100,9 @@ ways, the plugin's hooks stand down so nothing runs twice.
 | A large session, before stepping away | `Next: reply within 30 min to keep 367k cached, or /compact before stepping away…` | Reply soon, or `/compact` first |
 | After a message that re-sent cached context | `The last message re-sent 306k cached tokens (~$3.06) because…` | Follow the fix it names |
 | Context worth compacting | `Next: /compact keep … — 360k of context, $0.18 per message to re-read.` | Run it |
-| You send a message on an older Opus (5, 4.8, 4.7, …) | Held once before it runs: Opus 5.5's price, then `/compact` → `/model claude-opus-5-5`, and your message handed back; after that, the same line ends every reply | Switch and resend, or just resend |
+| You send small work on Opus | Held once before it runs: Sonnet 5.5's price, then `/compact` → `/model claude-sonnet-5-5`, and your message handed back; after that, every reply ends with the model its next message needs | Switch and resend, or just resend |
+| You send Opus work on Sonnet | Held once before it runs, with the reason and your message handed back | `/model claude-opus-5-5` and resend, or just resend |
+| You are on an older Opus (5, 4.8, 4.7, …) | The same, moving you to Opus 5.5: newer and cheaper | Switch and resend, or just resend |
 | The first prompt after changing model | `[handoff]`: the reasoning, open tasks and files the old model left | Nothing: Claude continues from it |
 | `/model` re-selecting the model already in use | A confirmation, with the re-cache price | Cancel unless you meant it |
 | A new session after `/clear` | `[last session 2h ago]` recent asks, files and last reply | Nothing: Claude has the thread |

@@ -219,7 +219,8 @@ function modeRecall() {
 
   const neighbors = advice.findNeighbors(store, prompt, scoreMod);
 
-  if (router) {
+  // The session-model advice already says Opus; an escalate line on top would repeat it.
+  if (router && !(modelAdvice.message && /\/model claude-opus/.test(modelAdvice.message))) {
     try {
       const note = advice.routerNote(router.recommend(prompt, {
         repoRoot: ROOT,

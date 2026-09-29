@@ -30,11 +30,11 @@ const DEFAULTS = {
   },
   modelSwitch: {
     enabled: true,
-    // Suggest moving an Opus session to the newest, cheapest Opus only once a median
-    // turn on it would cost this much more there.
+    // Suggest a cheaper model (Sonnet 5.5, or a newer model of the same family) only
+    // once a median turn on the current one would cost this much more.
     budgetUsd: 0.5,
-    // Hold the first message on the dearer Opus once, at no token cost. 'advise' only
-    // says so instead.
+    // Hold the first advised message once per model, at no token cost; every later
+    // reply ends with the line. 'advise' only relays the line.
     hold: true,
   },
   // Record each turn's outcome at Stop so the router learns (the strict profile).
@@ -267,11 +267,12 @@ function describe(settings) {
     ? 'holds the first message after the cache expires, once'
     : 'tells you after a reply until when the cache is cheap; never holds a message'}`);
   const m = settings.modelSwitch || DEFAULTS.modelSwitch;
-  lines.push(`model switch:       ${m.enabled ? 'on' : 'off'} (${m.hold === false ? 'advise' : 'hold'}; Opus sessions only)`);
-  lines.push(`  to the best Opus: from an older, dearer Opus, when a median turn saves $${m.budgetUsd}+; /compact first keeps the reasoning`);
-  lines.push('  never:            suggests Sonnet, or an older Opus');
-  lines.push(`  said:             before each message runs; ${m.hold === false ? "said as the reply's last line" : 'held once, then the last line of every reply'}`);
-  lines.push('                    or switches the model for you (Claude Code refuses a session re-pricing itself)');
+  lines.push(`model switch:       ${m.enabled ? 'on' : 'off'} (${m.hold === false ? 'advise' : 'hold'}; Opus and Sonnet sessions)`);
+  lines.push(`  down to Sonnet:   Sonnet 5.5 after 3 small turns and a small message, when a median turn saves $${m.budgetUsd}+`);
+  lines.push('  up to Opus:       Opus 5.5 when a message reads as complex work, deep reasoning or new work');
+  lines.push('  newer model:      an older, dearer Opus or Sonnet moves to the newest of its family');
+  lines.push(`  said:             before each message runs; ${m.hold === false ? "as the reply's last line" : 'held once per model, then the last line of every reply'}`);
+  lines.push('  never:            switches the model for you (Claude Code refuses a session re-pricing itself)');
   lines.push(`outcome learning:   ${settings.learning ? 'on (each turn recorded at Stop, no extra process)' : 'off'}`);
   lines.push(`config file:        ${configPath()}`);
   lines.push('env overrides:      TOKEN_HARNESS_COMPACT=on|off|dynamic|<tokens>, '

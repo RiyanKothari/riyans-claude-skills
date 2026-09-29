@@ -40,19 +40,21 @@ orders like "make it better" read short but are not small. Moderate work is neve
 delegated on wording alone, because wording cannot tell it from complex. Older Opus and
 Sonnet versions are never the cheapest adequate choice and are never routed to.
 
-**2b. Every Opus session on the best Opus.** Opus 5.5 is both the newest Opus and the
-cheapest ($4/$20, cache reads $0.20/M, against $5/$25 for Opus 5, 4.8, 4.7, 4.6 and 4.5
-and $15/$75 for 4.1 and 4), so moving to it never trades quality for price and there is
-nothing to guess from the prompt. The hook checks each message before it runs: on an
-older Opus, the first message is held once, at no token cost, with the command and the
-message handed back; every later reply ends with the same `[next]` line until the
-session moves. Sonnet is never suggested. Switch as `/compact` first, while still on the
-old model, then `/model claude-opus-5-5`: the cache belongs to one model, so the re-cache
-is charged on the small compacted result and repays in ~5 messages. Reasoning is bound
-to the exact model that wrote it, so the switch hook saves the readable reasoning, open
-tasks and files, and the next prompt shows a `[handoff]` line: continue from it. The
-best Opus is worked out from the price table, so a price change moves it. Never switch
-the model for the user; Claude Code refuses a session re-pricing itself.
+**2b. Every message on the model its work needs.** The hook reads each message before it
+runs. Small work on Opus goes to Sonnet 5.5 ($2/$10) after 3 measured small turns, when
+the message is not complex, reasoning-heavy or a new work order; replayed over 348 real
+turns, that ran complex work on Sonnet 2% of the time, against 29% for judging by the
+prompt alone — `rcskills backtest` re-measures it. Opus work on Sonnet goes to Opus 5.5
+the moment it arrives. An older, dearer model moves to the newest of its family (Opus 5,
+4.8, 4.7 → Opus 5.5), which never costs quality. The first advice on a model holds the
+message once, at no token cost, with the command and the message handed back; every
+later reply ends with the current `[next]` line, so each message is advised on its own.
+Step down as `/compact` first, while still on the old model, then `/model`: the cache
+belongs to one model, so the re-cache is charged on the small compacted result. Reasoning
+is bound to the exact model that wrote it, so the switch hook saves the readable
+reasoning, open tasks and files, and the next prompt shows a `[handoff]` line: continue
+from it. The best model of each family comes from the price table. Never switch the
+model for the user; Claude Code refuses a session re-pricing itself.
 
 **3. Never dump memory into context.** Query it. Recall is BM25-ranked and hard-
 capped by a token budget, so cost cannot grow with store size. Unused notes decay

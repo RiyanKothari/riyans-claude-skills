@@ -24,12 +24,14 @@ small. Requiring score -2 or lower gave 0 false delegations in that sample and
 73.4% correct decisions instead of 62.9%, at the cost of more missed savings. Only
 9 turns in the sample met the bar, so treat the precision as strong but not proven.
 
-### Which Opus a session runs on
+### Which model a session runs on
 
 Moderate work is never delegated on wording alone: of 29 prompts predicted "moderate",
-17 turned out complex. The session model is advised separately, for Opus sessions only:
-an older Opus is told to move to Opus 5.5, which is newer and cheaper, so the move never
-costs quality. Sonnet is never suggested for the session.
+17 turned out complex. The session model is advised separately, before each message:
+Opus steps down to Sonnet 5.5 only after 3 measured small turns and a small-reading
+message (2% complex work on Sonnet, replayed over 348 turns); Sonnet goes back to Opus
+5.5 before any message that reads complex, reasoning-heavy or like new work; an older
+Opus moves to Opus 5.5, which is newer and cheaper.
 
 ### Models never routed to
 

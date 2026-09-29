@@ -199,13 +199,13 @@ test('model-switch advice is on by default, and set, env and describe all reach 
     assert.deepEqual(load(env).modelSwitch, { enabled: true, budgetUsd: 1.25, hold: true }, 'a budget re-enables it');
     assert.throws(() => set('model-switch', 'sometimes'), /on, off, hold, advise or a dollar amount/);
 
-    assert.match(describe(load(env)), /model switch:       on \(hold; Opus sessions only\)/);
+    assert.match(describe(load(env)), /model switch:       on \(hold; Opus and Sonnet sessions\)/);
     assert.match(describe(load(env)), /saves \$1\.25\+/);
     assert.match(describe(load(env)), /switches the model for you/);
 
     set('model-switch', 'advise');
     assert.strictEqual(load(env).modelSwitch.hold, false, 'advise only says so');
-    assert.match(describe(load(env)), /\(advise; Opus sessions only\)/);
+    assert.match(describe(load(env)), /\(advise; Opus and Sonnet sessions\)/);
     assert.strictEqual(load(env).modelSwitch.budgetUsd, 1.25, 'the mode keeps the budget');
     set('model-switch', 'hold');
     assert.strictEqual(load(env).modelSwitch.hold, true);
