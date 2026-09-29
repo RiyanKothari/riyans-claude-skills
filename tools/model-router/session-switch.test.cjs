@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const {
-  adviseSessionSwitch, predictModel, bestModel, bestOf, switchEconomics, requestUsd,
+  adviseSessionSwitch, predictModel, bestModel, choiceReport, bestOf, switchEconomics, requestUsd,
   MEDIAN_TURN_REQUESTS, POST_COMPACT_TOKENS,
 } = require('./session-switch.cjs');
 const cost = require('./cost.cjs');
@@ -97,17 +97,42 @@ test('no economics without a priced model, real tokens, or a saving', () => {
 test('every Sonnet goes to Opus 5.5, with the per-task reason', () => {
   const p = predictModel({ model: SONNET55, prompt: 'build the export pipeline' });
   assert.deepStrictEqual([p.want, p.dir, p.fromPrompt], [OPUS55, 'task', true]);
-  assert.strictEqual(p.why, 'claude-opus-5-5 finishes a coding task for $13.00 vs $14.20 on claude-sonnet-5-5, in 1h vs 1.5h, scoring 66 vs 68 (Coding Agent Index)');
+  assert.strictEqual(p.why, 'claude-opus-5-5 finishes a coding task for $13.04 vs $14.20 on claude-sonnet-5-5, in 1h vs 1.5h, scoring 66 vs 68 (Coding Agent Index, max effort)');
   const older = predictModel({ model: 'claude-sonnet-4-6', prompt: 'add a login page' });
   assert.strictEqual(older.want, OPUS55);
   assert.match(older.why, /on claude-sonnet-5-5, the newest Sonnet,/, 'an unbenchmarked model is compared through the newest of its family');
 });
 
-test('every older Opus goes to Opus 5.5', () => {
-  for (const m of [OPUS5, 'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-1']) {
+test('every older Opus goes to Opus 5.5, for the reason that is true', () => {
+  // Opus 5 is measured: cheaper per task at max effort, but 6 points behind — beyond a tie.
+  const q = predictModel({ model: OPUS5, prompt: 'why does this deadlock' });
+  assert.deepStrictEqual([q.want, q.dir], [OPUS55, 'quality']);
+  assert.strictEqual(q.why, 'claude-opus-5-5 scores 66 vs 60 for claude-opus-5 (Coding Agent Index) — a real gap — though a task costs $13.04 vs $10.79 (Coding Agent Index, max effort)');
+  // The others were never measured: per-message price is all there is.
+  for (const m of ['claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-1']) {
     const p = predictModel({ model: m, prompt: 'why does this deadlock' });
-    assert.deepStrictEqual([p.want, p.dir, p.why], [OPUS55, 'same', `${OPUS55} is newer and cheaper than ${m}`], m);
+    assert.deepStrictEqual([p.want, p.dir, p.why], [OPUS55, 'same', `${OPUS55} is newer than ${m} and cheaper per message`], m);
   }
+});
+
+test('your own costs turn a quality move into a saving once there are enough', () => {
+  const mine = { [OPUS5]: { tasks: 104, usdPerTask: 6.86 }, [OPUS55]: { tasks: 20, usdPerTask: 2.73 } };
+  const p = predictModel({ model: OPUS5, prompt: 'build it all', observed: mine });
+  assert.deepStrictEqual([p.dir, p.why], ['task', 'claude-opus-5-5 finishes a coding task for $2.73 vs $6.86 on claude-opus-5, median of your complex tasks (20 vs 104)']);
+});
+
+test('a quality move is held without a price argument, whatever the session size', () => {
+  for (const tokens of [50000, 400000]) {
+    const { hold } = advise({ model: OPUS5, tokens });
+    assert.match(String(hold), /^\[rcskills\] Before this runs: claude-opus-5-5 scores 66 vs 60 for claude-opus-5 .*then \/model claude-opus-5-5, then send this again/, String(tokens));
+    assert.doesNotMatch(String(hold), /per message/);
+  }
+});
+
+test('the choice report says what decides and what is still missing', () => {
+  assert.strictEqual(choiceReport({}), 'model choice: claude-opus-5-5, decided by the Coding Agent Index (max effort) until each contender has 15 complex tasks on your sessions: claude-sonnet-5-5 0/15, claude-opus-5-5 0/15');
+  const both = { [SONNET55]: { tasks: 40, usdPerTask: 2 }, [OPUS55]: { tasks: 15, usdPerTask: 3 } };
+  assert.strictEqual(choiceReport(both), 'model choice: claude-sonnet-5-5, decided by your own task costs');
 });
 
 test('the size of the message decides only whether to hold it', () => {
@@ -131,14 +156,14 @@ test('the best model, other families and unknown models get nothing', () => {
 test('the first task on Sonnet is held before it runs, with the order that keeps the reasoning', () => {
   const { hold } = advise();
   assert.ok(hold);
-  assert.match(hold, /^\[rcskills\] Before this runs: claude-opus-5-5 finishes a coding task for \$13\.00 vs \$14\.20/);
+  assert.match(hold, /^\[rcskills\] Before this runs: claude-opus-5-5 finishes a coding task for \$13\.04 vs \$14\.20/);
   assert.match(hold, /\/compact keep decisions and open tasks for "build the export pipeline", then \/model claude-opus-5-5, then send this again/);
   assert.match(hold, /To stay on claude-sonnet-5-5, just send it again\./);
 });
 
-test('an older Opus is held with per-message prices', () => {
-  const { hold } = advise({ model: OPUS5 });
-  assert.match(String(hold), /^\[rcskills\] Before this runs: claude-opus-5-5 is newer and cheaper than claude-opus-5 — \$0\.11 vs \$0\.19 per message\./);
+test('an unmeasured older Opus is held with per-message prices', () => {
+  const { hold } = advise({ model: 'claude-opus-4-8' });
+  assert.match(String(hold), /^\[rcskills\] Before this runs: claude-opus-5-5 is newer than claude-opus-4-8 and cheaper per message — \$0\.11 vs \$0\.19 per message\./);
 });
 
 test('a question is told, never held, and does not use up the hold', () => {
@@ -225,7 +250,7 @@ test('too few local tasks, or only one model measured, leaves the benchmark in c
   const few = { [SONNET55]: { tasks: 5, usdPerTask: 1 }, [OPUS55]: { tasks: 200, usdPerTask: 3 } };
   assert.strictEqual(bestModel(few), OPUS55);
   const p = predictModel({ model: SONNET55, prompt: 'build it all', observed: few });
-  assert.match(p.why, /\(Coding Agent Index\)$/, 'never a mix of local and benchmark numbers');
+  assert.match(p.why, /\(Coding Agent Index, max effort\)$/, 'never a mix of local and benchmark numbers');
 });
 
 test('a system notice is never held or advised: the user did not send it', () => {

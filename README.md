@@ -100,7 +100,7 @@ ways, the plugin's hooks stand down so nothing runs twice.
 | A large session, before stepping away | `Next: reply within 30 min to keep 367k cached, or /compact before stepping away…` | Reply soon, or `/compact` first |
 | After a message that re-sent cached context | `The last message re-sent 306k cached tokens (~$3.06) because…` | Follow the fix it names |
 | Context worth compacting | `Next: /compact keep … — 360k of context, $0.18 per message to re-read.` | Run it |
-| You start a task on any model but the best per task (today Opus 5.5: $13.00 and 1h a task vs Sonnet 5.5's $14.20 and 1.5h; your own costs decide once `rcskills backtest` shows 15 complex tasks on each) | Held once before it runs, with the reason, `/compact` → `/model claude-opus-5-5`, and your message handed back; after that, every reply ends with the same line | Switch and resend, or just resend |
+| You start a task on any model but the best per task (today Opus 5.5: $13.04 and 1h a task vs Sonnet 5.5's $14.20 and 1.5h; your own costs decide once `rcskills backtest` shows 15 complex tasks on each) | Held once before it runs, with the reason, `/compact` → `/model claude-opus-5-5`, and your message handed back; after that, every reply ends with the same line | Switch and resend, or just resend |
 | You ask a question or make a small edit there | Told as the reply's last line, never held | Switch when convenient |
 | The first prompt after changing model | `[handoff]`: the reasoning, open tasks and files the old model left | Nothing: Claude continues from it |
 | `/model` re-selecting the model already in use | A confirmation, with the re-cache price | Cancel unless you meant it |

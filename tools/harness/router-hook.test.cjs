@@ -94,7 +94,7 @@ test('an older Opus session is told to move to Opus 5.5 on every message, held o
   const s = session([human('earlier'), usage('claude-opus-5')]);
   const held = JSON.parse(recall(s, 'next small thing'));
   assert.strictEqual(held.decision, 'block');
-  assert.match(held.reason, /claude-opus-5-5 is newer and cheaper than claude-opus-5/);
+  assert.match(held.reason, /claude-opus-5-5 scores 66 vs 60 for claude-opus-5/);
   assert.match(held.reason, /then \/model claude-opus-5-5, then send this again/);
   const later = recall(s, 'another small thing');
   assert.match(later, /^\[next\] .*\/model claude-opus-5-5/m, 'prompted again after the next message');
@@ -109,7 +109,7 @@ test('Opus 5.5 is left alone; Sonnet is held before a task and sent to Opus 5.5'
   const sonnet = session([human('earlier'), usage('claude-sonnet-5-5')]);
   const held = JSON.parse(recall(sonnet, 'why does the export pipeline deadlock under load'));
   assert.strictEqual(held.decision, 'block');
-  assert.match(held.reason, /claude-opus-5-5 finishes a coding task for \$13\.00 vs \$14\.20 .*\/model claude-opus-5-5/);
+  assert.match(held.reason, /claude-opus-5-5 finishes a coding task for \$13\.04 vs \$14\.20 .*\/model claude-opus-5-5/);
   const later = recall(sonnet, 'why does the export pipeline deadlock under load');
   assert.match(later, /^\[next\] .*then \/model claude-opus-5-5 — /m, 'the next message is prompted too');
   assert.doesNotMatch(later, /escalate -> opus/, 'one instruction, not two');
@@ -120,6 +120,6 @@ test('advise mode tells the user to switch instead of holding', () => {
   const s = session([human('earlier'), usage('claude-opus-4-8')]);
   const out = recall(s, 'why does the export pipeline hang', [], { TOKEN_HARNESS_MODEL_SWITCH: 'advise' });
   assert.doesNotMatch(out, /"decision":"block"/);
-  assert.match(out, /^\[next\] .*then \/model claude-opus-5-5 — claude-opus-5-5 is newer and cheaper than claude-opus-4-8/m);
+  assert.match(out, /^\[next\] .*then \/model claude-opus-5-5 — claude-opus-5-5 is newer than claude-opus-4-8 and cheaper per message/m);
   s.clean();
 });

@@ -29,10 +29,15 @@ const PRICING = {
 // What a whole coding task costs, not a token: a cheaper model that takes more steps
 // can cost more per task. Artificial Analysis Coding Agent Index v1.5, each model in
 // Claude Code at max effort (read 2026-09-29): index (higher is better), average API
-// cost and wall time per task. Update with the index.
+// cost and wall time per task (null where not published). Opus 5.5 and Opus 5 are
+// confirmed in Artificial Analysis' own posts (Opus 5.5: 66, $13.04, 15.6M tokens;
+// Opus 5: 60, $10.79, 11.4M); Sonnet 5.5 and Fable 5.1 are from its leaderboard chart.
+// At max effort only: Anthropic puts Opus 5.5 at ~40% below Opus 5 at default effort,
+// which is why observed.cjs lets the user's own costs take over. Update with the index.
 const TASK_BENCH = {
   'claude-sonnet-5-5': { index: 68, usdPerTask: 14.2, minutesPerTask: 90 },
-  'claude-opus-5-5': { index: 66, usdPerTask: 13.0, minutesPerTask: 60 },
+  'claude-opus-5-5': { index: 66, usdPerTask: 13.04, minutesPerTask: 60 },
+  'claude-opus-5': { index: 60, usdPerTask: 10.79, minutesPerTask: null },
   'claude-fable-5-1': { index: 62, usdPerTask: 12.4, minutesPerTask: 34.8 },
 };
 

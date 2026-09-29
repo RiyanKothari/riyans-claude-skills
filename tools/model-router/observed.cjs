@@ -112,7 +112,7 @@ function load(file = storePath()) {
 /**
  * Add complex turns to the store, once each, keeping the latest KEEP_PER_MODEL per
  * model. Returns how many were new.
- * @param {Array<{id: string, model: string, usd: number, tier: string}>} turns
+ * @param {Array<{id: string, model: string, usd: number, tier: string, requests?: number}>} turns
  */
 function record(turns, file = storePath()) {
   const data = load(file);
@@ -120,8 +120,16 @@ function record(turns, file = storePath()) {
   for (const t of turns) {
     if (t.tier !== 'complex' || !t.id || !(t.usd > 0)) continue;
     const m = (data.models[t.model] = data.models[t.model] || { tasks: [] });
-    if (m.tasks.some((x) => x.id === t.id)) continue;
-    m.tasks.push({ id: t.id, usd: Number(t.usd.toFixed(4)) });
+    const known = m.tasks.find((x) => x.id === t.id);
+    if (known) {
+      // Records from before request counts were kept get theirs on the next pass.
+      if (!known.requests && t.requests) {
+        known.requests = t.requests;
+        added++;
+      }
+      continue;
+    }
+    m.tasks.push({ id: t.id, usd: Number(t.usd.toFixed(4)), requests: t.requests || 0 });
     if (m.tasks.length > KEEP_PER_MODEL) m.tasks.splice(0, m.tasks.length - KEEP_PER_MODEL);
     added++;
   }
@@ -141,15 +149,24 @@ const median = (xs) => {
 };
 
 /**
- * Median cost of a complex task per model, and how many tasks it rests on.
- * @param {{models: Record<string, {tasks: Array<{usd: number}>}>}} data
+ * Median cost of a complex task per model, and how many tasks it rests on — split into
+ * what a request costs and how many requests a task takes, so a difference between
+ * models shows whether it is price or steps.
+ * @param {{models: Record<string, {tasks: Array<{usd: number, requests?: number}>}>}} data
  */
 function summarize(data) {
-  /** @type {Record<string, {tasks: number, usdPerTask: number}>} */
+  /** @type {Record<string, {tasks: number, usdPerTask: number, usdPerRequest: number|null, requestsPerTask: number|null}>} */
   const out = {};
   for (const [model, m] of Object.entries((data && data.models) || {})) {
-    const usd = (m.tasks || []).map((t) => t.usd).filter((x) => x > 0);
-    if (usd.length) out[model] = { tasks: usd.length, usdPerTask: median(usd) };
+    const tasks = (m.tasks || []).filter((t) => t.usd > 0);
+    if (!tasks.length) continue;
+    const counted = tasks.filter((t) => (t.requests || 0) > 0);
+    out[model] = {
+      tasks: tasks.length,
+      usdPerTask: median(tasks.map((t) => t.usd)),
+      usdPerRequest: counted.length ? median(counted.map((t) => t.usd / (t.requests || 1))) : null,
+      requestsPerTask: counted.length ? median(counted.map((t) => t.requests || 0)) : null,
+    };
   }
   return out;
 }
@@ -158,7 +175,11 @@ function formatSummary(sum) {
   const rows = Object.entries(sum).sort((a, b) => b[1].tasks - a[1].tasks);
   if (!rows.length) return 'cost per complex task on your sessions: none recorded yet';
   return ['cost per complex task on your sessions (median, list price):',
-    ...rows.map(([m, s]) => `  ${m.padEnd(20)} $${s.usdPerTask.toFixed(2)} over ${s.tasks} task(s)${s.tasks < MIN_TASKS ? ` — ${MIN_TASKS} needed to count` : ''}`),
+    ...rows.map(([m, s]) => {
+      const split = s.usdPerRequest !== null && s.requestsPerTask !== null
+        ? ` ($${s.usdPerRequest.toFixed(3)} a request x ${Math.round(s.requestsPerTask)} requests)` : '';
+      return `  ${m.padEnd(20)} $${s.usdPerTask.toFixed(2)}${split} over ${s.tasks} task(s)${s.tasks < MIN_TASKS ? ` — ${MIN_TASKS} needed to count` : ''}`;
+    }),
   ].join('\n');
 }
 

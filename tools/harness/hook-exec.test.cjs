@@ -255,7 +255,7 @@ test('the real hooks move an older Opus to Opus 5.5, and carry the reasoning acr
   assert.match(recall('and helper four?'), /^\[next\] .*then \/model claude-opus-5-5/m, 'a question is told, not held');
   const held = JSON.parse(recall('refactor helper four'));
   assert.equal(held.decision, 'block');
-  assert.match(held.reason, /^\[rcskills\] Before this runs: claude-opus-5-5 is newer and cheaper than claude-opus-5 — .*\/compact keep decisions and open tasks for "refactor helper four", then \/model claude-opus-5-5, then send this again/);
+  assert.match(held.reason, /^\[rcskills\] Before this runs: claude-opus-5-5 scores 66 vs 60 for claude-opus-5 .*\/compact keep decisions and open tasks for "refactor helper four", then \/model claude-opus-5-5, then send this again/);
   const resent = recall('refactor helper four');
   assert.doesNotMatch(resent, /"decision"/, 'sending it again runs it');
   assert.match(resent, /^\[next\] .*then \/model claude-opus-5-5/m, 'and the reply still ends with the switch');

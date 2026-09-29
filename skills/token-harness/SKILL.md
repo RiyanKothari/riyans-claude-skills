@@ -43,13 +43,16 @@ Sonnet versions are never the cheapest adequate choice and are never routed to.
 **2b. The model is chosen per task, not per token.** A model that is cheaper per token
 can take more steps and cost more per task. On the Artificial Analysis Coding Agent
 Index (Claude Code, max effort) Sonnet 5.5 scores 68 at $14.20 and 1.5h a task; Opus 5.5
-scores 66 at $13.00 and 1h. Within 3 points counts as a tie, so Opus 5.5 is the model
+scores 66 at $13.04 and 1h. Within 3 points counts as a tie, so Opus 5.5 is the model
 for every Opus or Sonnet session: cheaper per task, faster, as good. The benchmark lives
 in `TASK_BENCH` in `tools/model-router/cost.cjs`; update it with the index and the
 choice follows. It is one run at max effort, so your own costs take over: the Stop hook
 prices each finished turn on the model that ran it (`observed.cjs`), and once both
 models have 15 complex tasks on record, their medians decide instead.
-`rcskills backtest` backfills that record from your history and prints it. Any other Opus or Sonnet is told to move: the first message that
+`rcskills backtest` backfills that record from your history, prints each model's cost
+per task as price per request x requests, and names what decides the choice right now.
+Every reason given is the true one: cheaper per task, or dearer but more than 3 points
+better (Opus 5 → Opus 5.5 at max effort: $10.79 vs $13.04 a task, 60 vs 66). Any other Opus or Sonnet is told to move: the first message that
 starts a task is held once, at no token cost, with the command and the message handed
 back; a question or small edit is told, never held (`demand.cjs` reads which is which);
 every later reply ends with the same `[next]` line. Nothing is said when the switch

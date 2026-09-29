@@ -29,7 +29,7 @@ test('backtest backfills and prints the cost of a complex task per model', () =>
   });
   assert.strictEqual(r.status, 0, r.stderr);
   // 8 requests x (100k x $0.20/M + 2k x $20/M) = $0.48.
-  assert.match(r.stdout, /cost per complex task on your sessions \(median, list price\):\n {2}claude-opus-5-5 +\$0\.48 over 1 task\(s\) — 15 needed to count/);
+  assert.match(r.stdout, /cost per complex task on your sessions \(median, list price\):\n {2}claude-opus-5-5 +\$0\.48 \(\$0\.060 a request x 8 requests\) over 1 task\(s\) — 15 needed to count\nmodel choice: claude-opus-5-5, decided by the Coding Agent Index/);
   assert.ok(fs.existsSync(store), 'the record the model choice reads was written');
   fs.rmSync(config, { recursive: true, force: true });
 });

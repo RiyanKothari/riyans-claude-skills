@@ -28,7 +28,9 @@ function main() {
     // Backfill the per-model task costs the model choice reads, then show them.
     const observed = require('../model-router/observed.cjs');
     observed.record(findTranscripts().flatMap((f) => observed.turnCosts(f)));
-    console.log(`\n${observed.formatSummary(observed.summarize(observed.load()))}`);
+    const summary = observed.summarize(observed.load());
+    console.log(`\n${observed.formatSummary(summary)}`);
+    console.log(require('../model-router/session-switch.cjs').choiceReport(summary));
 
     if (rest.includes('--rows')) {
       console.log('\nper-turn:');

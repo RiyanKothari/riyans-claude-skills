@@ -106,7 +106,7 @@ function bestOf(family) {
  * The model every Opus or Sonnet session should be on, judged per coding task, not
  * per token: among the benchmarked Opus and Sonnet models within INDEX_TIE of the top
  * score, the cheapest per task, the faster on a tie. Today Opus 5.5 — 66 against
- * Sonnet 5.5's 68, but $13.00 a task against $14.20, in 60 minutes against 90: Sonnet
+ * Sonnet 5.5's 68, but $13.04 a task against $14.20, in 60 minutes against 90: Sonnet
  * is cheaper per token and takes more of them. Fable is never chosen automatically.
  */
 /**
@@ -141,7 +141,7 @@ function bestModel(observed = null) {
   const top = Math.max(...bench.map(([, b]) => b.index));
   const fair = bench.filter(([, b]) => b.index >= top - INDEX_TIE);
   const { usd } = taskCosts(fair.map(([id]) => id), observed);
-  fair.sort(([ia, a], [ib, b]) => usd[ia] - usd[ib] || a.minutesPerTask - b.minutesPerTask);
+  fair.sort(([ia, a], [ib, b]) => usd[ia] - usd[ib] || (a.minutesPerTask || 0) - (b.minutesPerTask || 0));
   return fair[0][0];
 }
 
@@ -196,8 +196,12 @@ const minutes = (m) => (m >= 60 ? `${Number((m / 60).toFixed(1))}h` : `${Math.ro
  * best model whatever the task's size. The message decides only whether to hold it
  * (a task is starting) or just say so (a question, a small edit — see demand.cjs).
  *
+ * The reason given is the one that is true: cheaper per task ('task'), or dearer per
+ * task but more than INDEX_TIE points better ('quality'). Only for a model the index
+ * never measured does per-message price speak ('same': newer and cheaper per message).
+ *
  * @param {{model?: string|null, prompt?: string, observed?: Observed|null}} input
- * @returns {{want: string|null, dir: 'same'|'task'|null, why: string, fromPrompt: boolean, taskRatio: number|null}}
+ * @returns {{want: string|null, dir: 'same'|'task'|'quality'|null, why: string, fromPrompt: boolean, taskRatio: number|null}}
  */
 function predictModel(input = {}) {
   const none = { want: null, dir: null, why: '', fromPrompt: false, taskRatio: null };
@@ -206,37 +210,51 @@ function predictModel(input = {}) {
   const from = cost.normalizeModel(input.model);
   const to = bestModel(input.observed || null);
   if (!from || !to || from === to || !familyModels(family).includes(from)) return none;
+  const order = familyModels(family);
+  if (modelFamily(to) === family && order.indexOf(to) > order.indexOf(from)) return none; // never step back a version
   const holdable = readDemand(String(input.prompt || '')).level !== 'light';
 
-  if (modelFamily(to) === family) {
-    const order = familyModels(family);
-    if (order.indexOf(to) > order.indexOf(from)) return none; // never step back a version
-    const a = requestUsd(from, RANK_TOKENS, true);
-    const b = requestUsd(to, RANK_TOKENS, true);
-    if (a === null || b === null || b >= a) return none;
-    return { want: to, dir: 'same', why: `${to} is newer and cheaper than ${from}`, fromPrompt: holdable, taskRatio: null };
+  // Compare whole tasks — the user's own once both models have enough, the index until
+  // then. A model the index never measured is compared through the newest of its
+  // family, which is at least as good and no dearer.
+  const ref = cost.TASK_BENCH[from] ? from : bestOf(family);
+  const a = ref ? cost.TASK_BENCH[ref] : null;
+  const b = cost.TASK_BENCH[to];
+  if (ref && a && b && ref !== to) {
+    const t = taskCosts([ref, to], input.observed);
+    const refLabel = ref === from ? from : `${ref}, the newest ${family === 'opus' ? 'Opus' : 'Sonnet'}`;
+    const where = t.local
+      ? `median of your complex tasks (${input.observed?.[to]?.tasks} vs ${input.observed?.[ref]?.tasks})`
+      : 'Coding Agent Index, max effort';
+    if (t.usd[to] < t.usd[ref]) {
+      const detail = t.local ? where
+        : `${a.minutesPerTask && b.minutesPerTask ? `in ${minutes(b.minutesPerTask)} vs ${minutes(a.minutesPerTask)}, ` : ''}scoring ${b.index} vs ${a.index} (${where})`;
+      return {
+        want: to,
+        dir: 'task',
+        why: `${to} finishes a coding task for ${money(t.usd[to])} vs ${money(t.usd[ref])} on ${refLabel}, ${detail}`,
+        fromPrompt: holdable,
+        taskRatio: t.usd[to] / t.usd[ref],
+      };
+    }
+    if (b.index - a.index > INDEX_TIE) {
+      return {
+        want: to,
+        dir: 'quality',
+        why: `${to} scores ${b.index} vs ${a.index} for ${refLabel} (Coding Agent Index) — a real gap — `
+          + `though a task costs ${money(t.usd[to])} vs ${money(t.usd[ref])} (${where})`,
+        fromPrompt: holdable,
+        taskRatio: null,
+      };
+    }
+    return none;
   }
 
-  // Across families: compare whole tasks — on the user's own sessions once both models
-  // have enough, from the benchmark until then. A model with no entry is compared
-  // through the newest of its family, which is at least as good and no dearer.
-  const ref = cost.TASK_BENCH[from] ? from : bestOf(family);
-  const a = ref && cost.TASK_BENCH[ref];
-  const b = cost.TASK_BENCH[to];
-  if (!ref || !a || !b) return none;
-  const t = taskCosts([ref, to], input.observed);
-  if (t.usd[to] >= t.usd[ref]) return none;
-  const refLabel = ref === from ? from : `${ref}, the newest ${family === 'opus' ? 'Opus' : 'Sonnet'}`;
-  const source = t.local
-    ? `median of your complex tasks (${input.observed?.[to]?.tasks} vs ${input.observed?.[ref]?.tasks})`
-    : `in ${minutes(b.minutesPerTask)} vs ${minutes(a.minutesPerTask)}, scoring ${b.index} vs ${a.index} (Coding Agent Index)`;
-  return {
-    want: to,
-    dir: 'task',
-    why: `${to} finishes a coding task for ${money(t.usd[to])} vs ${money(t.usd[ref])} on ${refLabel}, ${source}`,
-    fromPrompt: holdable,
-    taskRatio: t.usd[to] / t.usd[ref],
-  };
+  if (modelFamily(to) !== family) return none;
+  const pa = requestUsd(from, RANK_TOKENS, true);
+  const pb = requestUsd(to, RANK_TOKENS, true);
+  if (pa === null || pb === null || pb >= pa) return none;
+  return { want: to, dir: 'same', why: `${to} is newer than ${from} and cheaper per message`, fromPrompt: holdable, taskRatio: null };
 }
 
 /**
@@ -272,21 +290,26 @@ function adviseSessionSwitch(input = {}) {
   const pred = predictModel(input);
   if (!pred.want) return quiet;
 
-  const econ = switchEconomics({ ...input, target: pred.want, taskRatio: pred.taskRatio });
-  const horizon = pred.dir === 'task' ? SESSION_REQUESTS : MEDIAN_TURN_REQUESTS;
-  if (!econ || econ.savedPerRequest * horizon < s.budgetUsd || econ.paybackRequests > horizon) return quiet;
+  // A move for quality costs more, so no saving can justify it; the score gap does.
+  const econ = pred.dir === 'quality' ? null : switchEconomics({ ...input, target: pred.want, taskRatio: pred.taskRatio });
+  if (pred.dir !== 'quality') {
+    const horizon = pred.dir === 'task' ? SESSION_REQUESTS : MEDIAN_TURN_REQUESTS;
+    if (!econ || econ.savedPerRequest * horizon < s.budgetUsd || econ.paybackRequests > horizon) return quiet;
+  }
+  const to = pred.want;
+  const from = cost.normalizeModel(model) || model;
 
   // One hold per model, spent only by a message that was actually held: a question
   // first must not use it up before the task that follows.
   const heldHere = Boolean(prior && prior.heldOn === model);
   const base = { ...(prior || {}), sessionId, said: pred.want, model, at: input.now || Date.now() };
-  const prices = pred.dir === 'same' ? ` — ${money(econ.targetPerRequestUsd)} vs ${money(econ.perRequestUsd)} per message` : '';
+  const prices = pred.dir === 'same' && econ ? ` — ${money(econ.targetPerRequestUsd)} vs ${money(econ.perRequestUsd)} per message` : '';
 
   if (s.hold && !heldHere && pred.fromPrompt) {
     return {
       message: null,
       hold: `[rcskills] Before this runs: ${pred.why}${prices}. To switch and keep the reasoning: ${compactCommand(prompt)}, `
-        + `then /model ${econ.to}, then send this again. To stay on ${econ.from}, just send it again.${giveBack(prompt)}`,
+        + `then /model ${to}, then send this again. To stay on ${from}, just send it again.${giveBack(prompt)}`,
       state: { ...base, heldOn: model },
     };
   }
@@ -294,18 +317,35 @@ function adviseSessionSwitch(input = {}) {
   return {
     message: relay(modelSwitchLine({
       focus: prompt,
-      to: econ.to,
+      to,
       why: pred.why,
-      fromUsd: pred.dir === 'same' ? econ.perRequestUsd : null,
-      toUsd: pred.dir === 'same' ? econ.targetPerRequestUsd : null,
+      fromUsd: pred.dir === 'same' && econ ? econ.perRequestUsd : null,
+      toUsd: pred.dir === 'same' && econ ? econ.targetPerRequestUsd : null,
     })),
     hold: null,
     state,
   };
 }
 
+/**
+ * One line on what the model choice rests on right now: the best model, whether the
+ * user's own costs or the benchmark decide, and what each contender still needs.
+ * @param {Observed|null} observed
+ */
+function choiceReport(observed) {
+  const bench = Object.entries(cost.TASK_BENCH).filter(([id]) => ['opus', 'sonnet'].includes(String(modelFamily(id))));
+  if (!bench.length) return 'model choice: no benchmark';
+  const top = Math.max(...bench.map(([, b]) => b.index));
+  const fair = bench.filter(([, b]) => b.index >= top - INDEX_TIE).map(([id]) => id);
+  const { local } = taskCosts(fair, observed);
+  const counts = fair.map((m) => `${m} ${Math.min(observed?.[m]?.tasks || 0, MIN_LOCAL_TASKS)}/${MIN_LOCAL_TASKS}`).join(', ');
+  return `model choice: ${bestModel(observed)}, decided by ${local ? 'your own task costs' : 'the Coding Agent Index (max effort)'}`
+    + `${local ? '' : ` until each contender has ${MIN_LOCAL_TASKS} complex tasks on your sessions: ${counts}`}`;
+}
+
 module.exports = {
   adviseSessionSwitch,
+  choiceReport,
   predictModel,
   bestModel,
   taskCosts,

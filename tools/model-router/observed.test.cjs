@@ -47,8 +47,18 @@ test('only complex turns are recorded, once each, and the median decides', () =>
   assert.strictEqual(observed.record(turns, t.store), 3);
   assert.strictEqual(observed.record(turns, t.store), 0, 'recording twice adds nothing');
   const sum = observed.summarize(observed.load(t.store));
-  assert.deepStrictEqual(sum['claude-opus-5-5'], { tasks: 3, usdPerTask: 3 });
+  assert.deepStrictEqual(sum['claude-opus-5-5'], { tasks: 3, usdPerTask: 3, usdPerRequest: null, requestsPerTask: null });
   assert.match(observed.formatSummary(sum), /claude-opus-5-5 +\$3\.00 over 3 task\(s\) — 15 needed to count/);
+  fs.rmSync(t.dir, { recursive: true, force: true });
+});
+
+test('a task costs its price per request times its requests, and old records get their counts', () => {
+  const t = transcript([]);
+  observed.record([{ id: 'a', model: 'claude-opus-5-5', usd: 3, requests: 0, tier: 'complex' }], t.store);
+  assert.strictEqual(observed.record([{ id: 'a', model: 'claude-opus-5-5', usd: 3, requests: 30, tier: 'complex' }], t.store), 1, 'the count is filled in');
+  const sum = observed.summarize(observed.load(t.store))['claude-opus-5-5'];
+  assert.deepStrictEqual([sum.usdPerRequest, sum.requestsPerTask], [0.1, 30]);
+  assert.match(observed.formatSummary({ 'claude-opus-5-5': sum }), /\$3\.00 \(\$0\.100 a request x 30 requests\) over 1 task\(s\)/);
   fs.rmSync(t.dir, { recursive: true, force: true });
 });
 
