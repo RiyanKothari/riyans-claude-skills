@@ -46,7 +46,7 @@ test('arguments: repeated tasks, a model list, a budget and an effort', () => {
   });
 });
 
-test('a real run works in a throwaway clone with capped, edit-only permissions', { skip: process.platform === 'win32' && 'needs an executable script as claude' }, () => {
+test('a real run works in a throwaway clone with capped, edit-only permissions', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'compare-run-'));
   const repo = path.join(dir, 'repo');
   fs.mkdirSync(repo);
@@ -56,11 +56,11 @@ test('a real run works in a throwaway clone with capped, edit-only permissions',
   git('add', '.');
   git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
   const argsFile = path.join(dir, 'args.json');
-  const fake = path.join(dir, 'claude');
-  fs.writeFileSync(fake, `#!/usr/bin/env node\nrequire('fs').writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), cloned: require('fs').existsSync('a.txt') }));\nconsole.log(JSON.stringify({ type: 'result', total_cost_usd: 0.25, num_turns: 4, duration_ms: 2000, is_error: false }));\n`);
-  fs.chmodSync(fake, 0o755);
+  // A Node script stands in for claude, run as [node, script] so it works on every OS.
+  const fake = path.join(dir, 'fake-claude.cjs');
+  fs.writeFileSync(fake, `require('fs').writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), cloned: require('fs').existsSync('a.txt') }));\nconsole.log(JSON.stringify({ type: 'result', total_cost_usd: 0.25, num_turns: 4, duration_ms: 2000, is_error: false }));\n`);
 
-  const r = runOnce({ claude: fake, repo, task: 'do it', model: 'claude-sonnet-5-5', budget: 1, effort: 'medium' });
+  const r = runOnce({ claude: [process.execPath, fake], repo, task: 'do it', model: 'claude-sonnet-5-5', budget: 1, effort: 'medium' });
   assert.deepStrictEqual([r.ok, r.usd, r.turns], [true, 0.25, 4]);
   const seen = JSON.parse(fs.readFileSync(argsFile, 'utf8'));
   assert.ok(seen.cloned, 'ran inside a clone of the repo');

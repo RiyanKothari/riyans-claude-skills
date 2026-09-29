@@ -47,7 +47,7 @@ function parseResult(stdout) {
 
 /**
  * One task on one model, in a fresh clone that is removed afterwards.
- * @param {{claude: string, repo: string, task: string, model: string, budget: number, effort?: string|null}} a
+ * @param {{claude: string|string[], repo: string, task: string, model: string, budget: number, effort?: string|null}} a
  */
 function runOnce(a) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcskills-compare-'));
@@ -57,7 +57,9 @@ function runOnce(a) {
     const args = ['-p', a.task, '--model', a.model, '--output-format', 'json', '--max-budget-usd', String(a.budget),
       '--permission-mode', 'acceptEdits', '--no-session-persistence'];
     if (a.effort) args.push('--effort', a.effort);
-    const r = spawnSync(a.claude, args, { cwd: dir, encoding: 'utf8', timeout: RUN_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
+    // claude is a path, or a command and its leading arguments ([node, script]).
+    const [cmd, ...pre] = Array.isArray(a.claude) ? a.claude : [a.claude];
+    const r = spawnSync(cmd, [...pre, ...args], { cwd: dir, encoding: 'utf8', timeout: RUN_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
     const res = parseResult(r.stdout);
     if (!res) return { model: a.model, ok: false, error: `no result (exit ${r.status}): ${String(r.stderr || '').trim().slice(0, 200)}` };
     const usd = Number(res.total_cost_usd);
@@ -76,7 +78,7 @@ function runOnce(a) {
 
 /**
  * Every task on every model; pairs where all runs finished are recorded.
- * @param {{tasks: string[], models?: string[], budget?: number, effort?: string|null, repo?: string, claude?: string,
+ * @param {{tasks: string[], models?: string[], budget?: number, effort?: string|null, repo?: string, claude?: string|string[],
  *   store?: string, run?: typeof runOnce, log?: (s: string) => void}} o
  */
 function compare(o) {
