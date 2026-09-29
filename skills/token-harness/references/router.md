@@ -27,11 +27,13 @@ small. Requiring score -2 or lower gave 0 false delegations in that sample and
 ### Which model a session runs on
 
 Moderate work is never delegated on wording alone: of 29 prompts predicted "moderate",
-17 turned out complex. The session model is advised separately, before each message:
-Opus steps down to Sonnet 5.5 only after 3 measured small turns and a small-reading
-message (2% complex work on Sonnet, replayed over 348 turns); Sonnet goes back to Opus
-5.5 before any message that reads complex, reasoning-heavy or like new work; an older
-Opus moves to Opus 5.5, which is newer and cheaper.
+17 turned out complex. The session model is advised separately, before each message,
+from what the message asks for (`demand.cjs`): light (a direct question, reworking given
+text, a small edit, short writing, a command) goes to Sonnet 5.5; heavy (reasoning,
+design, diagnosis, multi-part builds, open scope, any go-ahead) goes to Opus 5.5; unclear
+leaves Opus in place and sends Sonnet back. `demand-bench.json` holds 150 requests of
+every kind, labelled before the rules were written; its test fails if any heavy request
+reads as light. An older Opus moves to Opus 5.5, which is newer and cheaper.
 
 ### Models never routed to
 

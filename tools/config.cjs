@@ -268,8 +268,8 @@ function describe(settings) {
     : 'tells you after a reply until when the cache is cheap; never holds a message'}`);
   const m = settings.modelSwitch || DEFAULTS.modelSwitch;
   lines.push(`model switch:       ${m.enabled ? 'on' : 'off'} (${m.hold === false ? 'advise' : 'hold'}; Opus and Sonnet sessions)`);
-  lines.push(`  down to Sonnet:   Sonnet 5.5 after 3 small turns and a small message, when a median turn saves $${m.budgetUsd}+`);
-  lines.push('  up to Opus:       Opus 5.5 when a message reads as complex work, deep reasoning or new work');
+  lines.push(`  down to Sonnet:   Sonnet 5.5 for a message that reads clearly small, when a median turn saves $${m.budgetUsd}+`);
+  lines.push('  up to Opus:       Opus 5.5 for reasoning, design, diagnosis, multi-part or open work, and anything unclear');
   lines.push('  newer model:      an older, dearer Opus or Sonnet moves to the newest of its family');
   lines.push(`  said:             before each message runs; ${m.hold === false ? "as the reply's last line" : 'held once per model, then the last line of every reply'}`);
   lines.push('  never:            switches the model for you (Claude Code refuses a session re-pricing itself)');

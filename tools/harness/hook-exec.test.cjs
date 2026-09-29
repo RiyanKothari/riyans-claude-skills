@@ -254,7 +254,7 @@ test('the real hooks step Opus down after small work, and carry the reasoning ac
   // The prompt is read before it runs: small work on Opus is held once, at no token cost.
   const held = JSON.parse(recall('and helper four?'));
   assert.equal(held.decision, 'block');
-  assert.match(held.reason, /^\[rcskills\] Before this runs: the last 3 turns were small .*\/compact keep decisions and open tasks for "and helper four\?", then \/model claude-sonnet-5-5, then send this again/);
+  assert.match(held.reason, /^\[rcskills\] Before this runs: this is small work: .*\/compact keep decisions and open tasks for "and helper four\?", then \/model claude-sonnet-5-5, then send this again/);
   const resent = recall('and helper four?');
   assert.doesNotMatch(resent, /"decision"/, 'sending it again runs it');
   assert.match(resent, /^\[next\] .*then \/model claude-sonnet-5-5/m, 'and the reply still ends with the switch');

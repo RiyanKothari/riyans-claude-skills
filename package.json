@@ -1,6 +1,6 @@
 {
   "name": "riyans-claude-skills",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "license": "MIT",
   "description": "Cut Claude Code token cost: model-tier routing, budget-bounded memory, outcome learning, and evidence-gated self-scoring",
   "main": "tools/model-router/index.cjs",

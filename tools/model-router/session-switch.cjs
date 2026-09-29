@@ -2,7 +2,8 @@
 
 const { DEFAULTS } = require('../config.cjs');
 const cost = require('./cost.cjs');
-const { classify, modelFamily, HARD_SIGNALS } = require('./index.cjs');
+const { modelFamily } = require('./index.cjs');
+const { readDemand } = require('./demand.cjs');
 const { actualTier } = require('../outcome/score.cjs');
 const { relay, compactCommand, modelSwitchLine, modelUpLine } = require('../next-command.cjs');
 
@@ -33,22 +34,11 @@ const POST_COMPACT_TOKENS = 40000;
 const RANK_TOKENS = 100000;
 
 /**
- * Completed small turns needed before stepping down to Sonnet. Replayed over 344 real
- * turns, the prompt alone put complex work on Sonnet 29% of the time — wording cannot
- * see how big a job will get — while 3 measured small turns plus a small-reading
- * prompt put it there 2% of the time. 1 turn: 13%, 2: 6%, 4: no safer.
- */
-const SMALL_RUN = 3;
-
-/**
- * A new work order reads short but starts big: "add a setting…", "measure how
- * often…", "architect the product…" were most of the complex turns the tier rule
- * sent to Sonnet. These verbs keep a session on Opus, or bring it back. A trivial
- * edit ("add a comment", "rename") is exempt — the router already knows those.
+ * A new work order: the /compact focus names the latest one, not a follow-up like
+ * "how do you want to proceed".
  */
 const WORK_ORDER = /\b(add|build|implement|create|make|design|architect|plan|planning|measure|integrate|refactor|rewrite|migrate|set ?up|develop|improve|optimi[sz]e|redesign|port|convert|automate|research|audit|investigate|increase|reduce)\b/i;
 
-const SMALL = new Set(['trivial', 'simple']);
 const money = (n) => `$${n.toFixed(2)}`;
 
 /**
@@ -139,17 +129,6 @@ function switchEconomics(input = {}) {
   };
 }
 
-/** What a prompt says about the work it is about to start. */
-function readPrompt(prompt) {
-  const text = String(prompt || '');
-  const c = classify(text);
-  const trivialEdit = c.matched.some((m) => m.signal === 'trivial-edit');
-  return {
-    tier: c.tier,
-    hard: c.matched.some((m) => HARD_SIGNALS.has(m.signal)),
-    workOrder: WORK_ORDER.test(text) && !trivialEdit,
-  };
-}
 
 /**
  * A move within a family to a model that is both newer and cheaper, or null. Such a
@@ -169,15 +148,16 @@ function sameFamilyUpgrade(model) {
 }
 
 /**
- * Which model this message should run on, judged from what the session has really
- * done and what this prompt asks for. Only Opus and Sonnet sessions get an answer.
+ * Which model this message should run on, judged from the message itself — any kind
+ * of request, not only ones like past turns (see demand.cjs). Only Opus and Sonnet
+ * sessions get an answer.
  *
- * Opus → the best Sonnet: the last SMALL_RUN completed turns were all small, and this
- * prompt is not complex, not reasoning-heavy and not a new work order.
- * Sonnet → the best Opus: this prompt is any of those, or the last turn turned out
- * complex.
- * Otherwise an older, dearer model of the same family → its newest, cheapest one.
- * `fromPrompt` says the answer was reached before the turn ran, so it can be held.
+ * Sonnet is for messages that read clearly small, one at a time: Opus → the best
+ * Sonnet when this message is light; Sonnet → the best Opus when it is heavy (held
+ * before it runs), or unclear, or the last turn turned out complex (said, not held).
+ * Replayed over 348 real turns, that put no complex work on Sonnet, against 7.5% if
+ * unclear messages stayed there. Otherwise an older, dearer model of the same family →
+ * its newest, cheapest one. `fromPrompt` says the message itself decided it.
  *
  * @param {{model?: string|null, recent?: object[], prompt?: string}} input
  * @returns {{want: string|null, dir: 'down'|'up'|'same'|null, why: string, fromPrompt: boolean}}
@@ -187,13 +167,7 @@ function predictModel(input = {}) {
   const family = modelFamily(input.model);
   const recent = Array.isArray(input.recent) ? input.recent : [];
   const tiers = recent.map((t) => actualTier(t));
-  const p = readPrompt(input.prompt);
-
-  const reasons = [];
-  if (p.tier === 'complex') reasons.push('it reads as complex work');
-  if (p.hard) reasons.push('it asks for deep reasoning');
-  if (p.workOrder) reasons.push('it starts new work');
-  const promptNeedsOpus = reasons.length > 0;
+  const d = readDemand(String(input.prompt || ''));
   const lastComplex = tiers.length > 0 && tiers[tiers.length - 1] === 'complex';
   const upgrade = sameFamilyUpgrade(input.model);
   const same = upgrade
@@ -201,17 +175,15 @@ function predictModel(input = {}) {
     : none;
 
   if (family === 'opus') {
-    const run = tiers.slice(-SMALL_RUN);
     const sonnet = bestSonnet();
-    if (sonnet && !promptNeedsOpus && run.length === SMALL_RUN && run.every((t) => SMALL.has(t))) {
-      return { want: sonnet, dir: 'down', why: `the last ${SMALL_RUN} turns were small and this one reads small`, fromPrompt: true };
-    }
+    if (sonnet && d.level === 'light') return { want: sonnet, dir: 'down', why: `this is small work: ${d.why}`, fromPrompt: true };
     return same;
   }
   if (family === 'sonnet') {
     const opus = bestOpus();
-    if (opus && promptNeedsOpus) return { want: opus, dir: 'up', why: reasons.join(' and '), fromPrompt: true };
+    if (opus && d.level === 'heavy') return { want: opus, dir: 'up', why: d.why, fromPrompt: true };
     if (opus && lastComplex) return { want: opus, dir: 'up', why: 'the last turn turned out to be complex', fromPrompt: false };
+    if (opus && d.level === 'unclear') return { want: opus, dir: 'up', why: 'it may be bigger than it reads', fromPrompt: false };
     return same;
   }
   return none;
@@ -335,7 +307,7 @@ function formatReplay(r) {
 module.exports = {
   adviseSessionSwitch,
   predictModel,
-  readPrompt,
+  readDemand,
   bestOpus,
   bestSonnet,
   switchEconomics,
@@ -343,7 +315,7 @@ module.exports = {
   replaySwitchPolicy,
   formatReplay,
   MEDIAN_TURN_REQUESTS,
-  SMALL_RUN,
+
   WORK_ORDER,
   WRITE_TOKENS_PER_REQUEST,
   OUTPUT_TOKENS_PER_REQUEST,

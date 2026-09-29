@@ -118,7 +118,7 @@ test('Opus 5.5 is left alone for real work; Sonnet is held before it', () => {
 
 test('advise mode tells the user to switch instead of holding', () => {
   const s = session([human('earlier'), usage('claude-opus-4-8')]);
-  const out = recall(s, 'what does this return?', [], { TOKEN_HARNESS_MODEL_SWITCH: 'advise' });
+  const out = recall(s, 'implement the export pipeline', [], { TOKEN_HARNESS_MODEL_SWITCH: 'advise' });
   assert.doesNotMatch(out, /"decision":"block"/);
   assert.match(out, /^\[next\] .*then \/model claude-opus-5-5 — claude-opus-5-5 is newer and cheaper than claude-opus-4-8/m);
   s.clean();
