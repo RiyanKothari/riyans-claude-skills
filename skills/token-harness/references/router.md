@@ -39,7 +39,9 @@ benchmark numbers are never mixed in one comparison. A move that costs more per 
 still advised when the index gap exceeds 3 points (Opus 5, 60, → Opus 5.5, 66), and says
 so: the reason is quality, not price. Paired runs from `rcskills compare` — the same task
 on both models, in a throwaway clone, edit-only, capped by `--max-budget-usd` — decide
-before everything else once each model has 5. `demand.cjs` reads
+before everything else once each model has 5. A model is a contender only once your
+sessions have run it (`seen` in the record), so no advice names a model your Claude
+Code cannot select. `demand.cjs` reads
 each message only to decide whether to hold it (a task starting) or just say so (a
 question, a small edit); `demand-bench.json` tests that reading on 150 requests.
 

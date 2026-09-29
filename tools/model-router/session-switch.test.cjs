@@ -272,3 +272,14 @@ test('paired runs on the same tasks decide before anything else', () => {
   const short = { [SONNET55]: { tasks: 0, usdPerTask: 0, paired: { tasks: 4, usdPerTask: 0.1 } }, [OPUS55]: { tasks: 0, usdPerTask: 0, paired: { tasks: 9, usdPerTask: 0.5 } } };
   assert.strictEqual(bestModel(short), OPUS55, 'four pairs are not enough');
 });
+
+test('only models your sessions have run are ever recommended', () => {
+  const mine = { [SONNET55]: { tasks: 20, usdPerTask: 2 }, [OPUS55]: { tasks: 20, usdPerTask: 3 } };
+  assert.strictEqual(bestModel(mine), SONNET55, 'unfiltered, the cheaper model wins');
+  assert.strictEqual(bestModel(mine, [OPUS55, OPUS5]), OPUS55, 'but not one this Claude Code has never run');
+  assert.strictEqual(bestModel(mine, ['claude-haiku-4-5']), null, 'no runnable contender: no advice');
+  const p = predictModel({ model: OPUS55, prompt: 'build the export pipeline', observed: mine, available: [OPUS55] });
+  assert.strictEqual(p.want, null, 'already on the only runnable contender');
+  assert.strictEqual(choiceReport({}, [OPUS55]), 'model choice: claude-opus-5-5, the only contender your sessions can run (claude-sonnet-5-5 left out: never run in your sessions, so your Claude Code may not offer it)');
+  assert.strictEqual(choiceReport({}, []), choiceReport({}), 'an empty list filters nothing');
+});

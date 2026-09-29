@@ -55,7 +55,9 @@ it runs each task on both models in a throwaway clone, edit-only, capped by
 `--max-budget-usd`, and 5 such pairs per model outrank everything else.
 `rcskills backtest` backfills that record from your history, prints each model's cost
 per task as price per request x requests, and names what decides the choice right now.
-Every reason given is the true one: cheaper per task, or dearer but more than 3 points
+Only a model your sessions have really run is ever recommended, so the advice never
+names one your Claude Code cannot select; the first session on a new model makes it
+eligible. Every reason given is the true one: cheaper per task, or dearer but more than 3 points
 better (Opus 5 → Opus 5.5 at max effort: $10.79 vs $13.04 a task, 60 vs 66). Any other Opus or Sonnet is told to move: the first message that
 starts a task is held once, at no token cost, with the command and the message handed
 back; a question or small edit is told, never held (`demand.cjs` reads which is which);

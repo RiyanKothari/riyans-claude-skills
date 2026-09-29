@@ -117,7 +117,15 @@ function load(file = storePath()) {
 function record(turns, file = storePath()) {
   const data = load(file);
   let added = 0;
+  let changed = false;
+  // Every model a session really ran, whatever the turn's size: only these are ever
+  // recommended, so the advice never names a model this Claude Code cannot run.
+  const seen = (data.seen = Array.isArray(data.seen) ? data.seen : []);
   for (const t of turns) {
+    if (t.model && !seen.includes(t.model)) {
+      seen.push(t.model);
+      changed = true;
+    }
     if (t.tier !== 'complex' || !t.id || !(t.usd > 0)) continue;
     const m = (data.models[t.model] = data.models[t.model] || { tasks: [] });
     const known = m.tasks.find((x) => x.id === t.id);
@@ -133,7 +141,7 @@ function record(turns, file = storePath()) {
     if (m.tasks.length > KEEP_PER_MODEL) m.tasks.splice(0, m.tasks.length - KEEP_PER_MODEL);
     added++;
   }
-  if (added) {
+  if (added || changed) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(data));
@@ -187,4 +195,13 @@ function formatSummary(sum) {
   ].join('\n');
 }
 
-module.exports = { turnCosts, record, load, summarize, formatSummary, usageUsd, storePath, MIN_TASKS };
+/**
+ * Models the user's sessions have really run, or null when nothing is recorded yet
+ * (then nothing is filtered: an empty record says nothing about what runs).
+ * @param {{seen?: string[]}} data
+ */
+function seenModels(data) {
+  return data && Array.isArray(data.seen) && data.seen.length ? [...data.seen] : null;
+}
+
+module.exports = { turnCosts, record, load, summarize, formatSummary, seenModels, usageUsd, storePath, MIN_TASKS };

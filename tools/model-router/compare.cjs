@@ -146,7 +146,8 @@ if (require.main === module) {
   const out = compare({ ...o, claude: process.env.CLAUDE_BIN || 'claude', log: (s) => console.log(s) });
   console.log(format(out));
   const sw = require('./session-switch.cjs');
-  console.log(sw.choiceReport(observed.summarize(observed.load())));
+  const data = observed.load();
+  console.log(sw.choiceReport(observed.summarize(data), observed.seenModels(data)));
 }
 
 module.exports = { compare, runOnce, parseResult, parseArgs, format, DEFAULT_MODELS, MAX_BUDGET };

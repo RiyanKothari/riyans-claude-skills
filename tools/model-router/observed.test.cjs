@@ -90,3 +90,14 @@ test('the Stop hook files the turn that just ended', () => {
   assert.deepStrictEqual(Object.keys(observed.load(t.store).models), ['claude-opus-5-5']);
   fs.rmSync(t.dir, { recursive: true, force: true });
 });
+
+test('every model a session ran is remembered, whatever the turn size', () => {
+  const t = transcript([]);
+  assert.strictEqual(observed.seenModels(observed.load(t.store)), null, 'nothing recorded: nothing to filter by');
+  observed.record([
+    { id: 'q', model: 'claude-opus-5-5', usd: 0.05, tier: 'trivial' },
+    { id: 'x', model: 'claude-sonnet-5', usd: 2, tier: 'complex' },
+  ], t.store);
+  assert.deepStrictEqual(observed.seenModels(observed.load(t.store)), ['claude-opus-5-5', 'claude-sonnet-5']);
+  fs.rmSync(t.dir, { recursive: true, force: true });
+});

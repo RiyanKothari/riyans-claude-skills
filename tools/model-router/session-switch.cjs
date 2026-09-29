@@ -144,12 +144,17 @@ const MIN_PAIRS = 5;
 
 /**
  * @param {Observed|null} [observed]
+ * @param {string[]|null} [available] models the user's sessions have run
  */
-function bestModel(observed = null) {
+function bestModel(observed = null, available = null) {
+  if (available && !available.length) available = null;
   const bench = Object.entries(cost.TASK_BENCH).filter(([id]) => ['opus', 'sonnet'].includes(String(modelFamily(id))));
   if (!bench.length) return null;
   const top = Math.max(...bench.map(([, b]) => b.index));
-  const fair = bench.filter(([, b]) => b.index >= top - INDEX_TIE);
+  // Only models the user's Claude Code has really run: a model it cannot select is no
+  // advice at all. A missing list filters nothing.
+  const fair = bench.filter(([id, b]) => b.index >= top - INDEX_TIE && (!available || available.includes(id)));
+  if (!fair.length) return null;
   const { usd } = taskCosts(fair.map(([id]) => id), observed);
   fair.sort(([ia, a], [ib, b]) => usd[ia] - usd[ib] || (a.minutesPerTask || 0) - (b.minutesPerTask || 0));
   return fair[0][0];
@@ -210,7 +215,7 @@ const minutes = (m) => (m >= 60 ? `${Number((m / 60).toFixed(1))}h` : `${Math.ro
  * task but more than INDEX_TIE points better ('quality'). Only for a model the index
  * never measured does per-message price speak ('same': newer and cheaper per message).
  *
- * @param {{model?: string|null, prompt?: string, observed?: Observed|null}} input
+ * @param {{model?: string|null, prompt?: string, observed?: Observed|null, available?: string[]|null}} input
  * @returns {{want: string|null, dir: 'same'|'task'|'quality'|null, why: string, fromPrompt: boolean, taskRatio: number|null}}
  */
 function predictModel(input = {}) {
@@ -218,7 +223,7 @@ function predictModel(input = {}) {
   const family = modelFamily(input.model);
   if (family !== 'opus' && family !== 'sonnet') return none;
   const from = cost.normalizeModel(input.model);
-  const to = bestModel(input.observed || null);
+  const to = bestModel(input.observed || null, input.available || null);
   if (!from || !to || from === to || !familyModels(family).includes(from)) return none;
   const order = familyModels(family);
   if (modelFamily(to) === family && order.indexOf(to) > order.indexOf(from)) return none; // never step back a version
@@ -284,6 +289,7 @@ function predictModel(input = {}) {
  *   model?: string|null, tokens?: number, cacheTtl?: '1h'|'5m'|null, recent?: object[],
  *   prompt?: string, sessionId?: string|null, now?: number,
  *   state?: {sessionId?: string|null, said?: string, model?: string, heldOn?: string}|null,
+ *   observed?: Observed|null, available?: string[]|null,
  *   settings?: {enabled?: boolean, budgetUsd?: number, hold?: boolean},
  * }} input
  * @returns {{message: string|null, hold: string|null, state: object|null}}
@@ -343,19 +349,26 @@ function adviseSessionSwitch(input = {}) {
  * One line on what the model choice rests on right now: the best model, whether the
  * user's own costs or the benchmark decide, and what each contender still needs.
  * @param {Observed|null} observed
+ * @param {string[]|null} [available]
  */
-function choiceReport(observed) {
+function choiceReport(observed, available = null) {
+  if (available && !available.length) available = null;
   const bench = Object.entries(cost.TASK_BENCH).filter(([id]) => ['opus', 'sonnet'].includes(String(modelFamily(id))));
   if (!bench.length) return 'model choice: no benchmark';
   const top = Math.max(...bench.map(([, b]) => b.index));
-  const fair = bench.filter(([, b]) => b.index >= top - INDEX_TIE).map(([id]) => id);
+  const all = bench.filter(([, b]) => b.index >= top - INDEX_TIE).map(([id]) => id);
+  const fair = all.filter((id) => !available || available.includes(id));
+  const skipped = all.filter((id) => !fair.includes(id));
+  const note = skipped.length ? ` (${skipped.join(', ')} left out: never run in your sessions, so your Claude Code may not offer it)` : '';
+  if (!fair.length) return `model choice: none${note}`;
+  if (fair.length === 1) return `model choice: ${fair[0]}, the only contender your sessions can run${note}`;
   const { source } = taskCosts(fair, observed);
   const by = { paired: 'paired runs on your repo', natural: 'your own task costs', bench: 'the Coding Agent Index (max effort)' }[source];
-  if (source !== 'bench') return `model choice: ${bestModel(observed)}, decided by ${by}`;
+  if (source !== 'bench') return `model choice: ${bestModel(observed, available)}, decided by ${by}${note}`;
   const counts = fair.map((m) => `${m} ${Math.min(observed?.[m]?.tasks || 0, MIN_LOCAL_TASKS)}/${MIN_LOCAL_TASKS}`).join(', ');
   const pairs = fair.map((m) => `${m} ${Math.min(observed?.[m]?.paired?.tasks || 0, MIN_PAIRS)}/${MIN_PAIRS}`).join(', ');
-  return `model choice: ${bestModel(observed)}, decided by ${by} until each contender has ${MIN_LOCAL_TASKS} complex tasks `
-    + `on your sessions (${counts}) or ${MIN_PAIRS} paired runs from rcskills compare (${pairs})`;
+  return `model choice: ${bestModel(observed, available)}, decided by ${by} until each contender has ${MIN_LOCAL_TASKS} complex tasks `
+    + `on your sessions (${counts}) or ${MIN_PAIRS} paired runs from rcskills compare (${pairs})${note}`;
 }
 
 module.exports = {

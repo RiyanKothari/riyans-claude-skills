@@ -73,7 +73,13 @@ module.exports = function createAdvice(env) {
     const observedMod = req('model-router/observed.cjs');
     try {
       const result = switchMod.adviseSessionSwitch({
-        observed: observedMod ? observedMod.summarize(observedMod.load()) : null,
+        ...(() => {
+          if (!observedMod) return { observed: null, available: null };
+          const data = observedMod.load();
+          const seen = observedMod.seenModels(data);
+          // The model this session is on runs, whatever the record says.
+          return { observed: observedMod.summarize(data), available: seen && activity.model ? [...seen, activity.model] : seen };
+        })(),
         model: activity.model,
         tokens: activity.tokens,
         cacheTtl: activity.cacheTtl,
