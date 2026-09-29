@@ -27,13 +27,13 @@ small. Requiring score -2 or lower gave 0 false delegations in that sample and
 ### Which model a session runs on
 
 Moderate work is never delegated on wording alone: of 29 prompts predicted "moderate",
-17 turned out complex. The session model is advised separately, before each message,
-from what the message asks for (`demand.cjs`). Sonnet 5.5 is the default — on agentic
-coding it is on par with Opus or a little weaker, for about a third less. Opus 5.5 is
-kept for thinking: reasoning, judgement, diagnosing a failure. A go-ahead or an unclear
-message never switches, so the model changes where work starts. `demand-bench.json`
-holds 150 requests of every kind, labelled before the rules were written; its test fails
-if any heavy request reads as light. An older Opus moves to Opus 5.5.
+17 turned out complex. The session model is chosen per task from `TASK_BENCH` in
+`cost.cjs` (Artificial Analysis Coding Agent Index): among Opus and Sonnet models within
+3 points of the top score, the cheapest per task. Today that is Opus 5.5 — $13.00 and 1h
+a task against Sonnet 5.5's $14.20 and 1.5h, 66 against 68. Per-token prices get this
+backwards: Sonnet 5.5 is cheaper per message and takes more of them. `demand.cjs` reads
+each message only to decide whether to hold it (a task starting) or just say so (a
+question, a small edit); `demand-bench.json` tests that reading on 150 requests.
 
 ### Models never routed to
 

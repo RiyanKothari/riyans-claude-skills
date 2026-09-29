@@ -26,6 +26,16 @@ const PRICING = {
   'claude-haiku-3-5': { in: 0.8, out: 4 },
 };
 
+// What a whole coding task costs, not a token: a cheaper model that takes more steps
+// can cost more per task. Artificial Analysis Coding Agent Index v1.5, each model in
+// Claude Code at max effort (read 2026-09-29): index (higher is better), average API
+// cost and wall time per task. Update with the index.
+const TASK_BENCH = {
+  'claude-sonnet-5-5': { index: 68, usdPerTask: 14.2, minutesPerTask: 90 },
+  'claude-opus-5-5': { index: 66, usdPerTask: 13.0, minutesPerTask: 60 },
+  'claude-fable-5-1': { index: 62, usdPerTask: 12.4, minutesPerTask: 34.8 },
+};
+
 // Context windows in tokens. Claude 4.6 and later have 1M; earlier models 200k.
 const WINDOW = {
   'claude-opus-4-5': 200000,
@@ -222,6 +232,7 @@ module.exports = {
   normalizeModel,
   pricedId,
   PRICING,
+  TASK_BENCH,
   CACHE_READ_MULTIPLIER,
   CACHE_WRITE_5M,
   CACHE_WRITE_1H,

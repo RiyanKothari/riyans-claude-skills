@@ -102,16 +102,16 @@ test('an older Opus session is told to move to Opus 5.5 on every message, held o
   s.clean();
 });
 
-test('Opus 5.5 is left alone for thinking work; Sonnet is held before it', () => {
+test('Opus 5.5 is left alone; Sonnet is held before a task and sent to Opus 5.5', () => {
   const opus = session([human('earlier'), usage('claude-opus-5-5')]);
   assert.doesNotMatch(recall(opus, 'why does the export pipeline deadlock under load'), /"decision":"block"|\/model /);
   opus.clean();
   const sonnet = session([human('earlier'), usage('claude-sonnet-5-5')]);
   const held = JSON.parse(recall(sonnet, 'why does the export pipeline deadlock under load'));
   assert.strictEqual(held.decision, 'block');
-  assert.match(held.reason, /needs Opus .*\/model claude-opus-5-5/);
+  assert.match(held.reason, /claude-opus-5-5 finishes a coding task for \$13\.00 vs \$14\.20 .*\/model claude-opus-5-5/);
   const later = recall(sonnet, 'why does the export pipeline deadlock under load');
-  assert.match(later, /^\[next\] .*Before your next message: \/model claude-opus-5-5/m, 'the next message is prompted too');
+  assert.match(later, /^\[next\] .*then \/model claude-opus-5-5 — /m, 'the next message is prompted too');
   assert.doesNotMatch(later, /escalate -> opus/, 'one instruction, not two');
   sonnet.clean();
 });

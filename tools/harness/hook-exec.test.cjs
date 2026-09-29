@@ -224,7 +224,7 @@ test('the Stop hook records the turn only when learning is on, in the same proce
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('the real hooks step Opus down after small work, and carry the reasoning across the switch', () => {
+test('the real hooks move an older Opus to Opus 5.5, and carry the reasoning across the switch', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'switch-hook-'));
   const { home, env } = fakeHome();
   const hookEnv = { ...env, TOKEN_HARNESS_MODEL_SWITCH: '' };
@@ -251,13 +251,14 @@ test('the real hooks step Opus down after small work, and carry the reasoning ac
   ].map((l) => JSON.stringify(l)).join('\n') + '\n');
   const recall = (prompt) => runHook(HOOK, ['recall'], dir, JSON.stringify({ prompt, transcript_path: tp, session_id: 'sw' }), hookEnv).stdout;
 
-  // The prompt is read before it runs: small work on Opus is held once, at no token cost.
-  const held = JSON.parse(recall('and helper four?'));
+  // A question on an older Opus is only told; the first task is held once, at no token cost.
+  assert.match(recall('and helper four?'), /^\[next\] .*then \/model claude-opus-5-5/m, 'a question is told, not held');
+  const held = JSON.parse(recall('refactor helper four'));
   assert.equal(held.decision, 'block');
-  assert.match(held.reason, /^\[rcskills\] Before this runs: this is small work: .*\/compact keep decisions and open tasks for "and helper four\?", then \/model claude-sonnet-5-5, then send this again/);
-  const resent = recall('and helper four?');
+  assert.match(held.reason, /^\[rcskills\] Before this runs: claude-opus-5-5 is newer and cheaper than claude-opus-5 — .*\/compact keep decisions and open tasks for "refactor helper four", then \/model claude-opus-5-5, then send this again/);
+  const resent = recall('refactor helper four');
   assert.doesNotMatch(resent, /"decision"/, 'sending it again runs it');
-  assert.match(resent, /^\[next\] .*then \/model claude-sonnet-5-5/m, 'and the reply still ends with the switch');
+  assert.match(resent, /^\[next\] .*then \/model claude-opus-5-5/m, 'and the reply still ends with the switch');
   assert.doesNotMatch(recall('/compact keep decisions'), /"decision"/, 'a slash command is never held');
 
   // The user switches. Reasoning is bound to the exact model, so even Opus to Opus

@@ -137,7 +137,4 @@ function readDemand(prompt) {
   return r('unclear', 'unclear', 'it could be small or large');
 }
 
-/** Work Opus is kept for when Sonnet is the default: thinking, not building. */
-const THINKING = new Set(['reasoning', 'diagnosis']);
-
-module.exports = { readDemand, THINKING };
+module.exports = { readDemand };

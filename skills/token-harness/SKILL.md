@@ -40,22 +40,21 @@ orders like "make it better" read short but are not small. Moderate work is neve
 delegated on wording alone, because wording cannot tell it from complex. Older Opus and
 Sonnet versions are never the cheapest adequate choice and are never routed to.
 
-**2b. Sonnet 5.5 by default, Opus 5.5 for thinking.** On agentic coding Sonnet 5.5 is on
-par with Opus, or a little weaker, for about a third less per message, so it does the
-building; Opus 5.5 is kept for reasoning, judgement and diagnosing failures. The hook
-reads each message before it runs — any kind of request, by what it asks for
-(`tools/model-router/demand.cjs`): on Sonnet, a thinking message is held once and sent
-up to Opus 5.5; on Opus, a new message that is not thinking work is sent down to Sonnet
-5.5. A go-ahead ("yes", "continue") or an unclear message changes nothing, so switches
-happen where work starts, never in the middle of it. An older, dearer model moves to
-the newest of its family. The first advice on a model holds the message, at no token
-cost, with the command and the message handed back; every later reply ends with the
-current `[next]` line. Step down as `/compact` first, then `/model`: the cache belongs
-to one model, so the re-cache is charged on the small compacted result. Reasoning is
-bound to the exact model that wrote it, so the switch hook saves it as text and the next
-prompt shows a `[handoff]` line: continue from it. `rcskills backtest` replays the rule
-over real sessions. Never switch the model for the user; Claude Code refuses a session
-re-pricing itself.
+**2b. The model is chosen per task, not per token.** A model that is cheaper per token
+can take more steps and cost more per task. On the Artificial Analysis Coding Agent
+Index (Claude Code, max effort) Sonnet 5.5 scores 68 at $14.20 and 1.5h a task; Opus 5.5
+scores 66 at $13.00 and 1h. Within 3 points counts as a tie, so Opus 5.5 is the model
+for every Opus or Sonnet session: cheaper per task, faster, as good. The benchmark lives
+in `TASK_BENCH` in `tools/model-router/cost.cjs`; update it with the index and the
+choice follows. Any other Opus or Sonnet is told to move: the first message that
+starts a task is held once, at no token cost, with the command and the message handed
+back; a question or small edit is told, never held (`demand.cjs` reads which is which);
+every later reply ends with the same `[next]` line. Nothing is said when the switch
+would not pay back over a working session. Switch as `/compact` first, then `/model`:
+the cache belongs to one model, so the re-cache is charged on the small compacted
+result. Reasoning is bound to the exact model that wrote it, so the switch hook saves it
+as text and the next prompt shows a `[handoff]` line: continue from it. Never switch
+the model for the user; Claude Code refuses a session re-pricing itself.
 
 **3. Never dump memory into context.** Query it. Recall is BM25-ranked and hard-
 capped by a token budget, so cost cannot grow with store size. Unused notes decay
