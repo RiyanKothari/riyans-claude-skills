@@ -1,1 +1,7 @@
+# Every checkout gets LF on every OS: bash scripts and hooks break on CRLF.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
 bin/rcskills text eol=lf

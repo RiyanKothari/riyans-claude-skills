@@ -102,15 +102,15 @@ test('an older Opus session is told to move to Opus 5.5 on every message, held o
   s.clean();
 });
 
-test('Opus 5.5 is left alone for real work; Sonnet is held before it', () => {
+test('Opus 5.5 is left alone for thinking work; Sonnet is held before it', () => {
   const opus = session([human('earlier'), usage('claude-opus-5-5')]);
-  assert.doesNotMatch(recall(opus, 'implement the export pipeline across the reporting service'), /"decision":"block"|\/model /);
+  assert.doesNotMatch(recall(opus, 'why does the export pipeline deadlock under load'), /"decision":"block"|\/model /);
   opus.clean();
   const sonnet = session([human('earlier'), usage('claude-sonnet-5-5')]);
-  const held = JSON.parse(recall(sonnet, 'implement the export pipeline across the reporting service'));
+  const held = JSON.parse(recall(sonnet, 'why does the export pipeline deadlock under load'));
   assert.strictEqual(held.decision, 'block');
   assert.match(held.reason, /needs Opus .*\/model claude-opus-5-5/);
-  const later = recall(sonnet, 'implement the export pipeline across the reporting service');
+  const later = recall(sonnet, 'why does the export pipeline deadlock under load');
   assert.match(later, /^\[next\] .*Before your next message: \/model claude-opus-5-5/m, 'the next message is prompted too');
   assert.doesNotMatch(later, /escalate -> opus/, 'one instruction, not two');
   sonnet.clean();
@@ -118,7 +118,7 @@ test('Opus 5.5 is left alone for real work; Sonnet is held before it', () => {
 
 test('advise mode tells the user to switch instead of holding', () => {
   const s = session([human('earlier'), usage('claude-opus-4-8')]);
-  const out = recall(s, 'implement the export pipeline', [], { TOKEN_HARNESS_MODEL_SWITCH: 'advise' });
+  const out = recall(s, 'why does the export pipeline hang', [], { TOKEN_HARNESS_MODEL_SWITCH: 'advise' });
   assert.doesNotMatch(out, /"decision":"block"/);
   assert.match(out, /^\[next\] .*then \/model claude-opus-5-5 — claude-opus-5-5 is newer and cheaper than claude-opus-4-8/m);
   s.clean();

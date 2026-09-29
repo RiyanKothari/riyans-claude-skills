@@ -3,7 +3,7 @@
 const { DEFAULTS } = require('../config.cjs');
 const cost = require('./cost.cjs');
 const { modelFamily } = require('./index.cjs');
-const { readDemand } = require('./demand.cjs');
+const { readDemand, THINKING } = require('./demand.cjs');
 const { actualTier } = require('../outcome/score.cjs');
 const { relay, compactCommand, modelSwitchLine, modelUpLine } = require('../next-command.cjs');
 
@@ -152,12 +152,14 @@ function sameFamilyUpgrade(model) {
  * of request, not only ones like past turns (see demand.cjs). Only Opus and Sonnet
  * sessions get an answer.
  *
- * Sonnet is for messages that read clearly small, one at a time: Opus → the best
- * Sonnet when this message is light; Sonnet → the best Opus when it is heavy (held
- * before it runs), or unclear, or the last turn turned out complex (said, not held).
- * Replayed over 348 real turns, that put no complex work on Sonnet, against 7.5% if
- * unclear messages stayed there. Otherwise an older, dearer model of the same family →
- * its newest, cheapest one. `fromPrompt` says the message itself decided it.
+ * Sonnet 5.5 is the default: on agentic coding it is on par with Opus, or a little
+ * weaker, at about a third less per message. Opus 5.5 is kept for thinking — reasoning,
+ * judgement, diagnosing a failure. So: Sonnet → the best Opus before a thinking message
+ * (held once); Opus → the best Sonnet when a new message is anything else. A go-ahead
+ * ("yes", "continue") or an unclear message changes nothing: the switch happens where
+ * work starts, never in the middle of it, so switches — each a re-cache and a reasoning
+ * handoff — stay rare. Otherwise an older, dearer model of the same family → its
+ * newest, cheapest one. `fromPrompt` says the message itself decided it.
  *
  * @param {{model?: string|null, recent?: object[], prompt?: string}} input
  * @returns {{want: string|null, dir: 'down'|'up'|'same'|null, why: string, fromPrompt: boolean}}
@@ -165,10 +167,9 @@ function sameFamilyUpgrade(model) {
 function predictModel(input = {}) {
   const none = { want: null, dir: null, why: '', fromPrompt: false };
   const family = modelFamily(input.model);
-  const recent = Array.isArray(input.recent) ? input.recent : [];
-  const tiers = recent.map((t) => actualTier(t));
   const d = readDemand(String(input.prompt || ''));
-  const lastComplex = tiers.length > 0 && tiers[tiers.length - 1] === 'complex';
+  const thinking = THINKING.has(d.kind);
+  const midTask = d.kind === 'continuation' || d.kind === 'unclear';
   const upgrade = sameFamilyUpgrade(input.model);
   const same = upgrade
     ? { want: upgrade, dir: /** @type {'same'} */ ('same'), why: `${upgrade} is newer and cheaper than ${cost.normalizeModel(input.model)}`, fromPrompt: true }
@@ -176,14 +177,15 @@ function predictModel(input = {}) {
 
   if (family === 'opus') {
     const sonnet = bestSonnet();
-    if (sonnet && d.level === 'light') return { want: sonnet, dir: 'down', why: `this is small work: ${d.why}`, fromPrompt: true };
+    if (sonnet && !thinking && !midTask) {
+      const why = d.level === 'light' ? `this is small work: ${d.why}` : `this is building, not reasoning: ${d.why}`;
+      return { want: sonnet, dir: 'down', why, fromPrompt: true };
+    }
     return same;
   }
   if (family === 'sonnet') {
     const opus = bestOpus();
-    if (opus && d.level === 'heavy') return { want: opus, dir: 'up', why: d.why, fromPrompt: true };
-    if (opus && lastComplex) return { want: opus, dir: 'up', why: 'the last turn turned out to be complex', fromPrompt: false };
-    if (opus && d.level === 'unclear') return { want: opus, dir: 'up', why: 'it may be bigger than it reads', fromPrompt: false };
+    if (opus && thinking) return { want: opus, dir: 'up', why: d.why, fromPrompt: true };
     return same;
   }
   return none;
@@ -264,13 +266,14 @@ function adviseSessionSwitch(input = {}) {
 
 /**
  * Replay the policy over real sessions, in order, as if every recommendation had
- * been followed. The number that matters is complex turns that ran on Sonnet: each
- * is a job a weaker model did that Opus should have done.
+ * been followed. Sonnet is the default, so complex work on Sonnet is expected; the
+ * number that matters is thinking messages — reasoning, diagnosis — that ran on
+ * Sonnet, and how often the user would have been asked to switch.
  *
  * @param {Array<Array<{prompt: string, edits: number, commands: number, reads: number, distinctFiles: number}>>} sessions
  */
 function replaySwitchPolicy(sessions) {
-  const out = { turns: 0, onSonnet: 0, complexOnSonnet: 0, moderateOnSonnet: 0, down: 0, up: 0, held: 0 };
+  const out = { turns: 0, onSonnet: 0, complexOnSonnet: 0, thinkingOnSonnet: 0, thinking: 0, down: 0, up: 0, held: 0 };
   for (const turns of sessions) {
     let model = bestOpus() || 'claude-opus-5-5';
     for (let i = 0; i < turns.length; i++) {
@@ -282,11 +285,12 @@ function replaySwitchPolicy(sessions) {
         if (pred.fromPrompt) out.held++;
       }
       out.turns++;
+      const thinking = THINKING.has(readDemand(String(turns[i].prompt || '')).kind);
+      if (thinking) out.thinking++;
       if (modelFamily(model) === 'sonnet') {
         out.onSonnet++;
-        const tier = actualTier(turns[i]);
-        if (tier === 'complex') out.complexOnSonnet++;
-        if (tier === 'moderate') out.moderateOnSonnet++;
+        if (actualTier(turns[i]) === 'complex') out.complexOnSonnet++;
+        if (thinking) out.thinkingOnSonnet++;
       }
     }
   }
@@ -294,12 +298,11 @@ function replaySwitchPolicy(sessions) {
 }
 
 function formatReplay(r) {
-  const pct = (n) => (r.onSonnet ? `${Math.round((100 * n) / r.onSonnet)}%` : '0%');
+  const pct = (n, of) => (of ? `${Math.round((100 * n) / of)}%` : '0%');
   return [
     `model switching, replayed over ${r.turns} turns as if every recommendation were followed:`,
-    `  turns on Sonnet:        ${r.onSonnet} (${r.turns ? Math.round((100 * r.onSonnet) / r.turns) : 0}% of all turns)`,
-    `  complex work on Sonnet: ${r.complexOnSonnet} (${pct(r.complexOnSonnet)} of Sonnet turns) — the degradation risk`,
-    `  moderate on Sonnet:     ${r.moderateOnSonnet} (${pct(r.moderateOnSonnet)})`,
+    `  turns on Sonnet 5.5:    ${r.onSonnet} (${pct(r.onSonnet, r.turns)} of all turns), ${r.complexOnSonnet} of them complex builds`,
+    `  thinking on Sonnet:     ${r.thinkingOnSonnet} of ${r.thinking} reasoning or diagnosis messages — the degradation risk`,
     `  switches:               ${r.down} down, ${r.up} up (${r.held} decided before the work ran)`,
   ].join('\n');
 }

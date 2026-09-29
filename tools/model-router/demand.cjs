@@ -94,45 +94,50 @@ const words = (t) => t.split(/\s+/).filter(Boolean).length;
 
 /**
  * @param {string} prompt
- * @returns {{level: 'light'|'heavy'|'unclear', why: string}}
+ * @returns {{level: 'light'|'heavy'|'unclear', kind: string, why: string}}
  */
 function readDemand(prompt) {
   const text = String(prompt || '').trim();
   const lower = text.toLowerCase();
   const n = words(text);
-  if (!text) return { level: 'unclear', why: 'empty' };
+  const r = (level, kind, why) => ({ level, kind, why });
+  if (!text) return r('unclear', 'unclear', 'empty');
 
-  // Heavy: any one of these is enough.
-  const listItems = (text.match(/^\s*(?:[-*]|\d+[.)])\s+/gm) || []).length;
-  if (listItems >= 2) return { level: 'heavy', why: 'it asks for several things' };
-  if (n > 35) return { level: 'heavy', why: 'it is a long, detailed request' };
-  if (/```|\bat .+:\d+\)?$|Traceback|Exception in/m.test(text)) return { level: 'heavy', why: 'it asks to diagnose a failure' };
+  // Heavy. Thinking first — reasoning and diagnosis are what Opus is kept for — so a
+  // long "why does…" is still read as reasoning, not just as long.
+  if (/```|\bat .+:\d+\)?$|Traceback|Exception in/m.test(text)) return r('heavy', 'diagnosis', 'it asks to diagnose a failure');
+  if (REASONING.test(lower)) return r('heavy', 'reasoning', 'it asks for reasoning, analysis or judgement');
+  if (FAILURE.test(lower) && REPAIR.test(lower)) return r('heavy', 'diagnosis', 'it asks to diagnose a failure');
   if (VAGUE_ORDER.test(lower) || CONTINUATION.test(lower) || OPEN_WORK.test(lower)) {
-    return { level: 'heavy', why: 'it continues or opens work of unknown size' };
+    return r('heavy', 'continuation', 'it continues or opens work of unknown size');
   }
-  if (REASONING.test(lower)) return { level: 'heavy', why: 'it asks for reasoning, analysis or judgement' };
-  if (FAILURE.test(lower) && REPAIR.test(lower)) return { level: 'heavy', why: 'it asks to diagnose a failure' };
+  const listItems = (text.match(/^\s*(?:[-*]|\d+[.)])\s+/gm) || []).length;
+  if (listItems >= 2) return r('heavy', 'build', 'it asks for several things');
+  if (n > 35) return r('heavy', 'build', 'it is a long, detailed request');
   if (BUILD_VERB.test(lower) && SYSTEM_NOUN.test(lower) && !SMALL_EDIT.test(lower)) {
-    return { level: 'heavy', why: 'it builds or changes something of several parts' };
+    return r('heavy', 'build', 'it builds or changes something of several parts');
   }
-  if (OPEN_SCOPE.test(lower) && BUILD_VERB.test(lower)) return { level: 'heavy', why: 'its scope is open' };
+  if (OPEN_SCOPE.test(lower) && BUILD_VERB.test(lower)) return r('heavy', 'build', 'its scope is open');
 
   // Light: short, and a known small kind of work.
   if (n <= 25) {
-    if (SMALLTALK.test(lower)) return { level: 'light', why: 'it is a reply, not a task' };
-    if (TRANSFORM.test(lower)) return { level: 'light', why: 'it reworks text it was given' };
-    if (COMMAND.test(lower)) return { level: 'light', why: 'it runs or shows something' };
-    if (EDIT_VERB.test(lower) && SMALL_EDIT.test(lower)) return { level: 'light', why: 'it is a small edit' };
+    if (SMALLTALK.test(lower)) return r('light', 'small', 'it is a reply, not a task');
+    if (TRANSFORM.test(lower)) return r('light', 'small', 'it reworks text it was given');
+    if (COMMAND.test(lower)) return r('light', 'small', 'it runs or shows something');
+    if (EDIT_VERB.test(lower) && SMALL_EDIT.test(lower)) return r('light', 'small', 'it is a small edit');
     if (/\b(?:write|draft|give me|compose|suggest)\b/i.test(lower) && SMALL_WRITE.test(lower)) {
-      return { level: 'light', why: 'it asks for a short piece of writing or code' };
+      return r('light', 'small', 'it asks for a short piece of writing or code');
     }
     // A question about the whole project is an audit in disguise, not a lookup.
     const wholeScope = OPEN_SCOPE.test(lower) || /\b(?:skills|codebase|project|repo|everything)\b/i.test(lower);
     if (!wholeScope && (QUESTION.test(lower) || /\?$/.test(text) || /^(?:convert|recommend) /i.test(lower))) {
-      return { level: 'light', why: 'it is a direct question' };
+      return r('light', 'small', 'it is a direct question');
     }
   }
-  return { level: 'unclear', why: 'it could be small or large' };
+  return r('unclear', 'unclear', 'it could be small or large');
 }
 
-module.exports = { readDemand };
+/** Work Opus is kept for when Sonnet is the default: thinking, not building. */
+const THINKING = new Set(['reasoning', 'diagnosis']);
+
+module.exports = { readDemand, THINKING };

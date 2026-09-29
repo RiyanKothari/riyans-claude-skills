@@ -25,7 +25,7 @@ test('backtest reports how often the model advice would have put complex work on
   });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /model switching, replayed over 5 turns/);
-  assert.match(r.stdout, /complex work on Sonnet: 0/);
+  assert.match(r.stdout, /thinking on Sonnet: +0 of 0/);
   assert.match(r.stdout, /switches: +1 down, 0 up/);
   fs.rmSync(config, { recursive: true, force: true });
 });

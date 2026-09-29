@@ -28,12 +28,12 @@ small. Requiring score -2 or lower gave 0 false delegations in that sample and
 
 Moderate work is never delegated on wording alone: of 29 prompts predicted "moderate",
 17 turned out complex. The session model is advised separately, before each message,
-from what the message asks for (`demand.cjs`): light (a direct question, reworking given
-text, a small edit, short writing, a command) goes to Sonnet 5.5; heavy (reasoning,
-design, diagnosis, multi-part builds, open scope, any go-ahead) goes to Opus 5.5; unclear
-leaves Opus in place and sends Sonnet back. `demand-bench.json` holds 150 requests of
-every kind, labelled before the rules were written; its test fails if any heavy request
-reads as light. An older Opus moves to Opus 5.5, which is newer and cheaper.
+from what the message asks for (`demand.cjs`). Sonnet 5.5 is the default — on agentic
+coding it is on par with Opus or a little weaker, for about a third less. Opus 5.5 is
+kept for thinking: reasoning, judgement, diagnosing a failure. A go-ahead or an unclear
+message never switches, so the model changes where work starts. `demand-bench.json`
+holds 150 requests of every kind, labelled before the rules were written; its test fails
+if any heavy request reads as light. An older Opus moves to Opus 5.5.
 
 ### Models never routed to
 

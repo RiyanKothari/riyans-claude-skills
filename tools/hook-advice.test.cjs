@@ -54,7 +54,7 @@ test('model advice moves an older Opus to Opus 5.5, and the handoff survives the
     handoff: { prompts: ['build it'], files: [], lastText: 'Planned.', thinking: ['Stream, do not buffer.'], todos: ['write the writer'] },
   };
   const e = env(activity);
-  const held = e.advice.modelSwitchAdvice(activity, { session_id: 's' }, 'build the export pipeline');
+  const held = e.advice.modelSwitchAdvice(activity, { session_id: 's' }, 'why does the export pipeline hang');
   assert.match(held.hold, /\/model claude-opus-5-5/);
 
   // Reasoning is bound to the exact model, so an Opus-to-Opus switch strands it too.
