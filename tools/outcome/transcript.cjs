@@ -10,6 +10,16 @@ const PROJECTS_DIR = path.join(
   'projects',
 );
 
+/**
+ * Text Claude Code writes into the conversation itself — a background task finishing,
+ * a local command's output — which reaches UserPromptSubmit exactly like a message
+ * the user typed. It is never the work in hand, and must never be held.
+ * @param {unknown} text
+ */
+function isSystemText(text) {
+  return /^\s*<(?:task-notification|local-command-[a-z-]+|command-(?:name|message|args)|system-reminder|bash-(?:input|stdout|stderr))>/.test(String(text || ''));
+}
+
 // A genuine human turn, as opposed to a tool result, hook injection or the
 // assistant's own follow-up — all of which also arrive as type "user".
 function isHumanPrompt(o) {
@@ -22,6 +32,7 @@ function isHumanPrompt(o) {
     && !o.isMeta
     && typeof o.message?.content === 'string'
     && o.message.content.trim().length > 0
+    && !isSystemText(o.message.content)
   );
 }
 
@@ -320,5 +331,6 @@ module.exports = {
   readTailLines,
   findTranscripts,
   isHumanPrompt,
+  isSystemText,
   PROJECTS_DIR,
 };

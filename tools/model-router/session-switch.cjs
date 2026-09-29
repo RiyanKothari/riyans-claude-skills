@@ -4,6 +4,7 @@ const { DEFAULTS } = require('../config.cjs');
 const cost = require('./cost.cjs');
 const { modelFamily } = require('./index.cjs');
 const { readDemand } = require('./demand.cjs');
+const { isSystemText } = require('../outcome/transcript.cjs');
 const { relay, compactCommand, modelSwitchLine } = require('../next-command.cjs');
 
 const DEFAULT_SETTINGS = DEFAULTS.modelSwitch;
@@ -264,7 +265,8 @@ function adviseSessionSwitch(input = {}) {
   const quiet = { message: null, hold: null, state: prior };
   const prompt = String(input.prompt || '').trim();
   // Slash commands are how the user acts on this advice; never stand in front of them.
-  if (!s.enabled || !prompt || prompt.startsWith('/')) return quiet;
+  // A system notice (a background task finishing) is not the user's message at all.
+  if (!s.enabled || !prompt || prompt.startsWith('/') || isSystemText(prompt)) return quiet;
 
   const model = String(input.model || '');
   const pred = predictModel(input);

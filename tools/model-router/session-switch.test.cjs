@@ -227,3 +227,10 @@ test('too few local tasks, or only one model measured, leaves the benchmark in c
   const p = predictModel({ model: SONNET55, prompt: 'build it all', observed: few });
   assert.match(p.why, /\(Coding Agent Index\)$/, 'never a mix of local and benchmark numbers');
 });
+
+test('a system notice is never held or advised: the user did not send it', () => {
+  const notice = '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>';
+  const r = advise({ prompt: notice });
+  assert.strictEqual(r.hold, null);
+  assert.strictEqual(r.message, null);
+});

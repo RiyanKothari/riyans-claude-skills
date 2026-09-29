@@ -154,3 +154,15 @@ test('the handoff keeps the readable reasoning and the open tasks a model switch
   assert.deepStrictEqual(a.handoff.thinking, ['second thought', 'third thought', 'fourth thought'], 'the latest three readable blocks');
   assert.deepStrictEqual(a.handoff.todos, ['quote fields'], 'open tasks only');
 });
+
+test('text Claude Code injects is told apart from what the user typed', () => {
+  const { isSystemText, isHumanPrompt } = require('./transcript.cjs');
+  for (const t of ['<task-notification>\n<task-id>x</task-id>', '<local-command-caveat>Caveat', '<command-name>/compact</command-name>', '  <system-reminder>hi']) {
+    assert.ok(isSystemText(t), t);
+  }
+  for (const t of ['fix the bug and push', 'what does <task-notification> mean?', '', null]) {
+    assert.ok(!isSystemText(t), String(t));
+  }
+  const notice = { type: 'user', promptSource: 'sdk', origin: { kind: 'human' }, message: { content: '<task-notification>done</task-notification>' } };
+  assert.strictEqual(isHumanPrompt(notice), false, 'even when it is marked as human');
+});

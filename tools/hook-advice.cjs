@@ -20,6 +20,7 @@
  */
 module.exports = function createAdvice(env) {
   const { req, readJsonFile, writeJsonFile, sessionActivity, AGENT_PREFIX, MAX_NEIGHBORS } = env;
+  const { isSystemText } = req('outcome/transcript.cjs') || { isSystemText: () => false };
   const { COMPACT_STATE, SWITCH_STATE, SWITCH_HANDOFF, GUARD_STATE, NOTICE_STATE, HANDOFF } = env.paths;
 
   /**
@@ -51,7 +52,8 @@ module.exports = function createAdvice(env) {
       model: activity ? activity.model : null,
       phase: activity ? activity.phase : null,
       rewriteUsd: extra.rewriteUsd || null,
-      focus: extra.focus || lastAsk(activity),
+      // A system notice is not the work in hand; name the user's last real ask.
+      focus: (extra.focus && !isSystemText(extra.focus) && extra.focus) || lastAsk(activity),
     });
     writeJsonFile(COMPACT_STATE, result.state);
     return result.message;
