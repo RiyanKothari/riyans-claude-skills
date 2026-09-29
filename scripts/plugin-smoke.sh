@@ -11,6 +11,9 @@ CLAUDE="${CLAUDE:-claude}"
 WORK="$(mktemp -d)"
 export CLAUDE_CONFIG_DIR="$WORK/config" HOME="$WORK/home" USERPROFILE="$WORK/home"
 export CLAUDE_PROJECT_DIR="$WORK/project" TOKEN_HARNESS_COMPACT=off
+# The Sonnet 4.5 session below would first be told to move to Sonnet 5.5; that advice
+# has its own tests, and this script proves the cache notice.
+export TOKEN_HARNESS_MODEL_SWITCH=off
 mkdir -p "$CLAUDE_CONFIG_DIR" "$HOME" "$CLAUDE_PROJECT_DIR"
 cd "$CLAUDE_PROJECT_DIR"
 
