@@ -63,14 +63,16 @@ function runOnce(a) {
     const res = parseResult(r.stdout);
     if (!res) return { model: a.model, ok: false, error: `no result (exit ${r.status}): ${String(r.stderr || '').trim().slice(0, 200)}` };
     const usd = Number(res.total_cost_usd);
-    return {
-      model: a.model,
-      ok: !res.is_error && Number.isFinite(usd) && usd > 0,
-      usd,
-      turns: Number(res.num_turns) || 0,
-      ms: Number(res.duration_ms) || 0,
-      error: res.is_error ? String(res.subtype || res.result || 'error').slice(0, 200) : null,
-    };
+    // What actually ran, from Claude Code's own usage report: a model id the CLI does not
+    // know may be swapped for another, and that run would compare the wrong model.
+    const ran = Object.keys(res.modelUsage || {});
+    const wrongModel = ran.length > 0 && !ran.some((m) => m.includes(a.model));
+    let error = null;
+    // `subtype` says "success" even on a failed run; the reason is in `result`.
+    if (res.is_error) error = String(res.result || res.subtype || 'error').slice(0, 200);
+    else if (wrongModel) error = `ran ${ran.join(', ')} instead of ${a.model}`;
+    else if (!(Number.isFinite(usd) && usd > 0)) error = 'no cost reported';
+    return { model: a.model, ok: !error, usd, turns: Number(res.num_turns) || 0, ms: Number(res.duration_ms) || 0, error };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -88,10 +90,17 @@ function compare(o) {
   const log = o.log || (() => {});
   const results = [];
   for (const task of o.tasks) {
-    const runs = models.map((model) => {
+    const runs = [];
+    for (const model of models) {
       log(`  ${model}: ${task.slice(0, 60)}…`);
-      return run({ claude: o.claude || 'claude', repo: o.repo || process.cwd(), task, model, budget, effort: o.effort || null });
-    });
+      runs.push(run({ claude: o.claude || 'claude', repo: o.repo || process.cwd(), task, model, budget, effort: o.effort || null }));
+      // Signed out, every later run fails the same way: stop instead of trying them all.
+      const last = runs[runs.length - 1];
+      if (!last.ok && /not logged in|\/login|invalid api key|authentication/i.test(String(last.error))) {
+        results.push({ task, runs, complete: false });
+        return { results, models, budget, stopped: `Claude Code is not signed in (${last.error}). Run \`claude /login\`, then try again.` };
+      }
+    }
     const complete = runs.every((r) => r.ok);
     results.push({ task, runs, complete });
     if (complete) {
@@ -99,7 +108,7 @@ function compare(o) {
       observed.record(runs.map((r) => ({ id, model: r.model, usd: Number(r.usd), requests: r.turns, tier: 'complex', paired: true })), o.store);
     }
   }
-  return { results, models, budget };
+  return { results, models, budget, stopped: null };
 }
 
 function format(out) {
@@ -110,6 +119,7 @@ function format(out) {
       lines.push(`    ${x.model.padEnd(20)} ${x.ok ? `$${x.usd.toFixed(2)}, ${x.turns} turns, ${Math.round(x.ms / 1000)}s` : `failed: ${x.error}`}`);
     }
   }
+  if (out.stopped) lines.push(`stopped: ${out.stopped}`);
   return lines.join('\n');
 }
 

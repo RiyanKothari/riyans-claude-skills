@@ -72,3 +72,42 @@ test('a real run works in a throwaway clone with capped, edit-only permissions',
   }
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('a failed run reports Claude\'s message, and a swapped model is not recorded', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'compare-res-'));
+  const repo = path.join(dir, 'repo');
+  fs.mkdirSync(repo);
+  spawnSync('git', ['init', '-q'], { cwd: repo });
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'x');
+  spawnSync('git', ['add', '.'], { cwd: repo });
+  spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'i'], { cwd: repo });
+  let n = 0;
+  /** @param {object} result */
+  const fakeWith = (result) => {
+    const f = path.join(dir, `fake-${n++}.cjs`);
+    fs.writeFileSync(f, `console.log(${JSON.stringify(JSON.stringify(result))});`);
+    return [process.execPath, f];
+  };
+  const signedOut = runOnce({ claude: fakeWith({ type: 'result', is_error: true, subtype: 'success', result: 'Not logged in · Please run /login', total_cost_usd: 0 }), repo, task: 't', model: 'claude-sonnet-5-5', budget: 1 });
+  assert.deepStrictEqual([signedOut.ok, signedOut.error], [false, 'Not logged in · Please run /login']);
+  const swapped = runOnce({ claude: fakeWith({ type: 'result', is_error: false, total_cost_usd: 0.3, num_turns: 3, modelUsage: { 'claude-sonnet-5': {} } }), repo, task: 't', model: 'claude-sonnet-5-5', budget: 1 });
+  assert.deepStrictEqual([swapped.ok, swapped.error], [false, 'ran claude-sonnet-5 instead of claude-sonnet-5-5']);
+  const right = runOnce({ claude: fakeWith({ type: 'result', is_error: false, total_cost_usd: 0.3, num_turns: 3, modelUsage: { 'claude-sonnet-5-5[1m]': {} } }), repo, task: 't', model: 'claude-sonnet-5-5', budget: 1 });
+  assert.strictEqual(right.ok, true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a signed-out CLI stops the comparison at the first run, with its own message', () => {
+  const t = tmpStore();
+  let calls = 0;
+  /** @param {{model: string}} a */
+  const run = (a) => {
+    calls++;
+    return { model: a.model, ok: false, usd: 0, turns: 1, ms: 0, error: 'Not logged in · Please run /login' };
+  };
+  const out = compare({ tasks: ['a', 'b', 'c'], store: t.store, run });
+  assert.strictEqual(calls, 1, 'nine more runs would fail the same way');
+  assert.match(String(out.stopped), /not signed in \(Not logged in · Please run \/login\)\. Run `claude \/login`/);
+  assert.match(format(out), /^stopped: Claude Code is not signed in/m);
+  fs.rmSync(t.dir, { recursive: true, force: true });
+});
