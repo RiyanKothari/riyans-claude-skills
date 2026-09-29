@@ -210,3 +210,20 @@ test('every figure in the advice is a real number', () => {
   }
   assert.ok(MEDIAN_TURN_REQUESTS > 0);
 });
+
+// --- the user's own costs ---
+
+test('your own task costs replace the benchmark once both models have enough', () => {
+  const mine = { [SONNET55]: { tasks: 20, usdPerTask: 2 }, [OPUS55]: { tasks: 20, usdPerTask: 3 } };
+  assert.strictEqual(bestModel(mine), SONNET55, 'on these sessions Sonnet is cheaper per task');
+  const p = predictModel({ model: OPUS55, prompt: 'build the export pipeline', observed: mine });
+  assert.deepStrictEqual([p.want, p.dir], [SONNET55, 'task']);
+  assert.strictEqual(p.why, 'claude-sonnet-5-5 finishes a coding task for $2.00 vs $3.00 on claude-opus-5-5, median of your complex tasks (20 vs 20)');
+});
+
+test('too few local tasks, or only one model measured, leaves the benchmark in charge', () => {
+  const few = { [SONNET55]: { tasks: 5, usdPerTask: 1 }, [OPUS55]: { tasks: 200, usdPerTask: 3 } };
+  assert.strictEqual(bestModel(few), OPUS55);
+  const p = predictModel({ model: SONNET55, prompt: 'build it all', observed: few });
+  assert.match(p.why, /\(Coding Agent Index\)$/, 'never a mix of local and benchmark numbers');
+});

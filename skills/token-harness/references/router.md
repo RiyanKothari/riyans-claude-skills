@@ -31,7 +31,11 @@ Moderate work is never delegated on wording alone: of 29 prompts predicted "mode
 `cost.cjs` (Artificial Analysis Coding Agent Index): among Opus and Sonnet models within
 3 points of the top score, the cheapest per task. Today that is Opus 5.5 — $13.00 and 1h
 a task against Sonnet 5.5's $14.20 and 1.5h, 66 against 68. Per-token prices get this
-backwards: Sonnet 5.5 is cheaper per message and takes more of them. `demand.cjs` reads
+backwards: Sonnet 5.5 is cheaper per message and takes more of them. The index is one
+run at max effort, so `observed.cjs` keeps the median cost of your own complex tasks
+per model (`~/.claude/token-harness/model-costs.json`, filled at every Stop and by
+`rcskills backtest`); once both models have 15, those decide instead. Local and
+benchmark numbers are never mixed in one comparison. `demand.cjs` reads
 each message only to decide whether to hold it (a task starting) or just say so (a
 question, a small edit); `demand-bench.json` tests that reading on 150 requests.
 

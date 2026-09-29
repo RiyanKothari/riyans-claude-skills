@@ -145,7 +145,7 @@ const NO_ADVICE = {
   modelSwitchAdvice: () => ({ message: null, hold: null }),
   switchHandoffLine: () => null, writeLargeSessionHandoff: () => {},
   cacheLines: () => [],
-  captureSwitchHandoff: () => {},
+  captureSwitchHandoff: () => {}, recordTaskCosts: () => {},
   coldCacheBlock: () => null,
 };
 const advice = (() => {
@@ -449,6 +449,7 @@ function modeFinalize() {
 function modeLoop() {
   const input = parseInput();
   if (learningOn()) recordOutcome(input);
+  advice.recordTaskCosts(input);
   const loop = req('loop.cjs');
   let decision = null;
   try {

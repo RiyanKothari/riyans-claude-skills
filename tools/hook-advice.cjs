@@ -58,9 +58,9 @@ module.exports = function createAdvice(env) {
   }
 
   /**
-   * Which Opus this session should be on: an older, dearer Opus is told to move to the
-   * newest, cheapest one, held once and then relayed after every message.
-   * `session-switch.cjs` owns the rule.
+   * Which model this session should be on, chosen per task: from the user's own
+   * complex tasks once there are enough, the Coding Agent Index until then. Held once,
+   * then relayed after every message. `session-switch.cjs` owns the rule.
    */
   function modelSwitchAdvice(activity, input, prompt) {
     const quiet = { message: null, hold: null };
@@ -68,8 +68,10 @@ module.exports = function createAdvice(env) {
     const switchMod = req('model-router/session-switch.cjs');
     const configMod = req('config.cjs');
     if (!switchMod || !configMod) return quiet;
+    const observedMod = req('model-router/observed.cjs');
     try {
       const result = switchMod.adviseSessionSwitch({
+        observed: observedMod ? observedMod.summarize(observedMod.load()) : null,
         model: activity.model,
         tokens: activity.tokens,
         cacheTtl: activity.cacheTtl,
@@ -171,6 +173,22 @@ module.exports = function createAdvice(env) {
       // Advice is optional; never block the prompt.
     }
     return lines;
+  }
+
+  /**
+   * File the turn that just ended under the model that ran it, so the model choice
+   * rests on this user's own costs as well as the benchmark. Reads only the tail of
+   * the transcript; any failure is ignored — the Stop hook must never block.
+   */
+  function recordTaskCosts(input) {
+    const mod = req('model-router/observed.cjs');
+    const tPath = input && (input.transcript_path || input.transcriptPath);
+    if (!mod || !tPath) return;
+    try {
+      mod.record(mod.turnCosts(tPath, { tailLines: 2000 }).slice(-3));
+    } catch {
+      // Cost records are optional.
+    }
   }
 
   function captureSwitchHandoff(input) {
@@ -277,5 +295,5 @@ module.exports = function createAdvice(env) {
     return nc ? nc.mergeNext(lines) : lines;
   }
 
-  return { finish, findNeighbors, routerNote, compactPrompt, modelSwitchAdvice, switchHandoffLine, writeLargeSessionHandoff, cacheLines, captureSwitchHandoff, coldCacheBlock };
+  return { finish, findNeighbors, routerNote, compactPrompt, modelSwitchAdvice, switchHandoffLine, writeLargeSessionHandoff, cacheLines, captureSwitchHandoff, coldCacheBlock, recordTaskCosts };
 };

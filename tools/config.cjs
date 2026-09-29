@@ -268,7 +268,7 @@ function describe(settings) {
     : 'tells you after a reply until when the cache is cheap; never holds a message'}`);
   const m = settings.modelSwitch || DEFAULTS.modelSwitch;
   lines.push(`model switch:       ${m.enabled ? 'on' : 'off'} (${m.hold === false ? 'advise' : 'hold'}; Opus and Sonnet sessions)`);
-  lines.push(`  best model:       chosen per task (Coding Agent Index), when switching saves $${m.budgetUsd}+ over a session`);
+  lines.push(`  best model:       chosen per task — your own costs once both models have 15 complex tasks, the Coding Agent Index until then — when switching saves $${m.budgetUsd}+ over a session`);
   lines.push('  held:             the first message that starts a task; questions and small edits are only told');
   lines.push('  newer model:      an older, dearer Opus or Sonnet moves to the newest of its family');
   lines.push(`  said:             before each message runs; ${m.hold === false ? "as the reply's last line" : 'held once per model, then the last line of every reply'}`);
