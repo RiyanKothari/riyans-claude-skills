@@ -1,6 +1,6 @@
 {
   "name": "rcskills",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Measured cost control for Claude Code: tells you before the prompt cache lapses, explains every costly re-send, routes small work to cheaper models, keeps bounded memory across sessions, and scores each task on evidence.",
   "author": {
     "name": "Riyan Kothari",

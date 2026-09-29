@@ -47,7 +47,7 @@ test('only complex turns are recorded, once each, and the median decides', () =>
   assert.strictEqual(observed.record(turns, t.store), 3);
   assert.strictEqual(observed.record(turns, t.store), 0, 'recording twice adds nothing');
   const sum = observed.summarize(observed.load(t.store));
-  assert.deepStrictEqual(sum['claude-opus-5-5'], { tasks: 3, usdPerTask: 3, usdPerRequest: null, requestsPerTask: null });
+  assert.deepStrictEqual(sum['claude-opus-5-5'], { tasks: 3, usdPerTask: 3, usdPerRequest: null, requestsPerTask: null, paired: null });
   assert.match(observed.formatSummary(sum), /claude-opus-5-5 +\$3\.00 over 3 task\(s\) — 15 needed to count/);
   fs.rmSync(t.dir, { recursive: true, force: true });
 });

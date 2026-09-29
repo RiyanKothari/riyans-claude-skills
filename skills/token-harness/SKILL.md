@@ -16,6 +16,7 @@ not asserted.
 | Need past context | Memory | `rcskills mem recall "<question>"` |
 | Finished a task | Scorecard | `rcskills scorecard score --title "..."` |
 | Doubting the router | Backtest | `rcskills backtest` |
+| Which model is cheaper for you | Paired runs | `rcskills compare --task "..."` |
 | Context feels bloated | Audit | `rcskills audit` |
 
 `rcskills` is on the shell PATH when installed as a plugin, and from any project
@@ -49,6 +50,9 @@ in `TASK_BENCH` in `tools/model-router/cost.cjs`; update it with the index and t
 choice follows. It is one run at max effort, so your own costs take over: the Stop hook
 prices each finished turn on the model that ran it (`observed.cjs`), and once both
 models have 15 complex tasks on record, their medians decide instead.
+Everyday tasks are never the same task on two models; `rcskills compare --task "..."` is:
+it runs each task on both models in a throwaway clone, edit-only, capped by
+`--max-budget-usd`, and 5 such pairs per model outrank everything else.
 `rcskills backtest` backfills that record from your history, prints each model's cost
 per task as price per request x requests, and names what decides the choice right now.
 Every reason given is the true one: cheaper per task, or dearer but more than 3 points

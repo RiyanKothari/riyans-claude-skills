@@ -110,7 +110,7 @@ function bestOf(family) {
  * is cheaper per token and takes more of them. Fable is never chosen automatically.
  */
 /**
- * @typedef {Record<string, {tasks: number, usdPerTask: number}>} Observed
+ * @typedef {Record<string, {tasks: number, usdPerTask: number, paired?: {tasks: number, usdPerTask: number}|null}>} Observed
  * Median cost of a complex task per model on the user's own sessions (observed.cjs).
  */
 
@@ -125,12 +125,22 @@ const { MIN_TASKS: MIN_LOCAL_TASKS } = require('./observed.cjs');
  * @param {Observed|null|undefined} observed
  */
 function taskCosts(models, observed) {
-  const local = observed && models.every((m) => observed[m] && observed[m].tasks >= MIN_LOCAL_TASKS);
+  // Paired runs first — the same task on each model is the only controlled comparison —
+  // then everyday tasks, then the benchmark.
+  const paired = Boolean(observed && models.every((m) => (observed[m]?.paired?.tasks || 0) >= MIN_PAIRS));
+  const natural = !paired && Boolean(observed && models.every((m) => (observed[m]?.tasks || 0) >= MIN_LOCAL_TASKS));
   /** @type {Record<string, number>} */
   const usd = {};
-  for (const m of models) usd[m] = local && observed ? observed[m].usdPerTask : cost.TASK_BENCH[m].usdPerTask;
-  return { usd, local: Boolean(local) };
+  for (const m of models) {
+    const o = observed && observed[m];
+    usd[m] = paired && o && o.paired ? o.paired.usdPerTask : natural && o ? o.usdPerTask : cost.TASK_BENCH[m].usdPerTask;
+  }
+  const source = paired ? 'paired' : natural ? 'natural' : 'bench';
+  return { usd, local: paired || natural, source };
 }
+
+/** Paired tasks per model before `rcskills compare` results decide. */
+const MIN_PAIRS = 5;
 
 /**
  * @param {Observed|null} [observed]
@@ -223,9 +233,11 @@ function predictModel(input = {}) {
   if (ref && a && b && ref !== to) {
     const t = taskCosts([ref, to], input.observed);
     const refLabel = ref === from ? from : `${ref}, the newest ${family === 'opus' ? 'Opus' : 'Sonnet'}`;
-    const where = t.local
-      ? `median of your complex tasks (${input.observed?.[to]?.tasks} vs ${input.observed?.[ref]?.tasks})`
-      : 'Coding Agent Index, max effort';
+    const where = t.source === 'paired'
+      ? `median of ${Math.min(input.observed?.[to]?.paired?.tasks || 0, input.observed?.[ref]?.paired?.tasks || 0)} paired runs on your repo`
+      : t.local
+        ? `median of your complex tasks (${input.observed?.[to]?.tasks} vs ${input.observed?.[ref]?.tasks})`
+        : 'Coding Agent Index, max effort';
     if (t.usd[to] < t.usd[ref]) {
       const detail = t.local ? where
         : `${a.minutesPerTask && b.minutesPerTask ? `in ${minutes(b.minutesPerTask)} vs ${minutes(a.minutesPerTask)}, ` : ''}scoring ${b.index} vs ${a.index} (${where})`;
@@ -337,10 +349,13 @@ function choiceReport(observed) {
   if (!bench.length) return 'model choice: no benchmark';
   const top = Math.max(...bench.map(([, b]) => b.index));
   const fair = bench.filter(([, b]) => b.index >= top - INDEX_TIE).map(([id]) => id);
-  const { local } = taskCosts(fair, observed);
+  const { source } = taskCosts(fair, observed);
+  const by = { paired: 'paired runs on your repo', natural: 'your own task costs', bench: 'the Coding Agent Index (max effort)' }[source];
+  if (source !== 'bench') return `model choice: ${bestModel(observed)}, decided by ${by}`;
   const counts = fair.map((m) => `${m} ${Math.min(observed?.[m]?.tasks || 0, MIN_LOCAL_TASKS)}/${MIN_LOCAL_TASKS}`).join(', ');
-  return `model choice: ${bestModel(observed)}, decided by ${local ? 'your own task costs' : 'the Coding Agent Index (max effort)'}`
-    + `${local ? '' : ` until each contender has ${MIN_LOCAL_TASKS} complex tasks on your sessions: ${counts}`}`;
+  const pairs = fair.map((m) => `${m} ${Math.min(observed?.[m]?.paired?.tasks || 0, MIN_PAIRS)}/${MIN_PAIRS}`).join(', ');
+  return `model choice: ${bestModel(observed)}, decided by ${by} until each contender has ${MIN_LOCAL_TASKS} complex tasks `
+    + `on your sessions (${counts}) or ${MIN_PAIRS} paired runs from rcskills compare (${pairs})`;
 }
 
 module.exports = {

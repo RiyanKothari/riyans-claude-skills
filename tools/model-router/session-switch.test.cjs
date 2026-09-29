@@ -130,7 +130,7 @@ test('a quality move is held without a price argument, whatever the session size
 });
 
 test('the choice report says what decides and what is still missing', () => {
-  assert.strictEqual(choiceReport({}), 'model choice: claude-opus-5-5, decided by the Coding Agent Index (max effort) until each contender has 15 complex tasks on your sessions: claude-sonnet-5-5 0/15, claude-opus-5-5 0/15');
+  assert.strictEqual(choiceReport({}), 'model choice: claude-opus-5-5, decided by the Coding Agent Index (max effort) until each contender has 15 complex tasks on your sessions (claude-sonnet-5-5 0/15, claude-opus-5-5 0/15) or 5 paired runs from rcskills compare (claude-sonnet-5-5 0/5, claude-opus-5-5 0/5)');
   const both = { [SONNET55]: { tasks: 40, usdPerTask: 2 }, [OPUS55]: { tasks: 15, usdPerTask: 3 } };
   assert.strictEqual(choiceReport(both), 'model choice: claude-sonnet-5-5, decided by your own task costs');
 });
@@ -258,4 +258,17 @@ test('a system notice is never held or advised: the user did not send it', () =>
   const r = advise({ prompt: notice });
   assert.strictEqual(r.hold, null);
   assert.strictEqual(r.message, null);
+});
+
+test('paired runs on the same tasks decide before anything else', () => {
+  const mine = {
+    [SONNET55]: { tasks: 30, usdPerTask: 9, paired: { tasks: 5, usdPerTask: 0.3 } },
+    [OPUS55]: { tasks: 30, usdPerTask: 2, paired: { tasks: 6, usdPerTask: 0.5 } },
+  };
+  assert.strictEqual(bestModel(mine), SONNET55, 'controlled pairs outrank everyday costs');
+  const p = predictModel({ model: OPUS55, prompt: 'build the export pipeline', observed: mine });
+  assert.strictEqual(p.why, 'claude-sonnet-5-5 finishes a coding task for $0.30 vs $0.50 on claude-opus-5-5, median of 5 paired runs on your repo');
+  assert.strictEqual(choiceReport(mine), 'model choice: claude-sonnet-5-5, decided by paired runs on your repo');
+  const short = { [SONNET55]: { tasks: 0, usdPerTask: 0, paired: { tasks: 4, usdPerTask: 0.1 } }, [OPUS55]: { tasks: 0, usdPerTask: 0, paired: { tasks: 9, usdPerTask: 0.5 } } };
+  assert.strictEqual(bestModel(short), OPUS55, 'four pairs are not enough');
 });

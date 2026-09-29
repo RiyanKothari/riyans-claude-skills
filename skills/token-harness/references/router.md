@@ -37,7 +37,9 @@ per model (`~/.claude/token-harness/model-costs.json`, filled at every Stop and 
 `rcskills backtest`); once both models have 15, those decide instead. Local and
 benchmark numbers are never mixed in one comparison. A move that costs more per task is
 still advised when the index gap exceeds 3 points (Opus 5, 60, → Opus 5.5, 66), and says
-so: the reason is quality, not price. `demand.cjs` reads
+so: the reason is quality, not price. Paired runs from `rcskills compare` — the same task
+on both models, in a throwaway clone, edit-only, capped by `--max-budget-usd` — decide
+before everything else once each model has 5. `demand.cjs` reads
 each message only to decide whether to hold it (a task starting) or just say so (a
 question, a small edit); `demand-bench.json` tests that reading on 150 requests.
 

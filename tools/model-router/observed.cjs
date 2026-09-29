@@ -112,7 +112,7 @@ function load(file = storePath()) {
 /**
  * Add complex turns to the store, once each, keeping the latest KEEP_PER_MODEL per
  * model. Returns how many were new.
- * @param {Array<{id: string, model: string, usd: number, tier: string, requests?: number}>} turns
+ * @param {Array<{id: string, model: string, usd: number, tier: string, requests?: number, paired?: boolean}>} turns
  */
 function record(turns, file = storePath()) {
   const data = load(file);
@@ -129,7 +129,7 @@ function record(turns, file = storePath()) {
       }
       continue;
     }
-    m.tasks.push({ id: t.id, usd: Number(t.usd.toFixed(4)), requests: t.requests || 0 });
+    m.tasks.push({ id: t.id, usd: Number(t.usd.toFixed(4)), requests: t.requests || 0, ...(t.paired ? { paired: true } : {}) });
     if (m.tasks.length > KEEP_PER_MODEL) m.tasks.splice(0, m.tasks.length - KEEP_PER_MODEL);
     added++;
   }
@@ -152,10 +152,10 @@ const median = (xs) => {
  * Median cost of a complex task per model, and how many tasks it rests on — split into
  * what a request costs and how many requests a task takes, so a difference between
  * models shows whether it is price or steps.
- * @param {{models: Record<string, {tasks: Array<{usd: number, requests?: number}>}>}} data
+ * @param {{models: Record<string, {tasks: Array<{usd: number, requests?: number, paired?: boolean}>}>}} data
  */
 function summarize(data) {
-  /** @type {Record<string, {tasks: number, usdPerTask: number, usdPerRequest: number|null, requestsPerTask: number|null}>} */
+  /** @type {Record<string, {tasks: number, usdPerTask: number, usdPerRequest: number|null, requestsPerTask: number|null, paired: {tasks: number, usdPerTask: number}|null}>} */
   const out = {};
   for (const [model, m] of Object.entries((data && data.models) || {})) {
     const tasks = (m.tasks || []).filter((t) => t.usd > 0);
@@ -166,6 +166,10 @@ function summarize(data) {
       usdPerTask: median(tasks.map((t) => t.usd)),
       usdPerRequest: counted.length ? median(counted.map((t) => t.usd / (t.requests || 1))) : null,
       requestsPerTask: counted.length ? median(counted.map((t) => t.requests || 0)) : null,
+      // Same task on each model (rcskills compare): the controlled comparison.
+      paired: tasks.some((t) => t.paired)
+        ? { tasks: tasks.filter((t) => t.paired).length, usdPerTask: median(tasks.filter((t) => t.paired).map((t) => t.usd)) }
+        : null,
     };
   }
   return out;
