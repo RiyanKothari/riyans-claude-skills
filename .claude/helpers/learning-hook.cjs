@@ -141,7 +141,7 @@ const NO_ADVICE = {
   modelSwitchAdvice: () => ({ message: null, hold: null }),
   switchHandoffLine: () => null, writeLargeSessionHandoff: () => {},
   cacheLines: () => [],
-  captureSwitchHandoff: () => {}, recordTaskCosts: () => {}, captureLedger: () => null, ledgerLine: () => null,
+  captureSwitchHandoff: () => {}, recordTaskCosts: () => {}, captureLedger: () => null, ledgerLine: () => null, decisionRule: () => null,
   coldCacheBlock: () => null,
 };
 const advice = (() => {
@@ -332,6 +332,7 @@ function modeCore() {
 
   const greeting = firstRunLine();
   if (greeting) out.push(greeting);
+  const rule = advice.decisionRule(); if (rule) out.push(rule); // decisions no commit records
 
   const core = coreTexts();
   if (core.length) out.push(`[core] ${core.join(' | ')}`);

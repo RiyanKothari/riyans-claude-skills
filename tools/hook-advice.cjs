@@ -352,5 +352,6 @@ module.exports = function createAdvice(env) {
     return nc ? nc.mergeNext(lines) : lines;
   }
 
-  return { finish, findNeighbors, routerNote, compactPrompt, modelSwitchAdvice, switchHandoffLine, writeLargeSessionHandoff, cacheLines, captureSwitchHandoff, coldCacheBlock, recordTaskCosts, captureLedger, ledgerLine };
+  return { finish, findNeighbors, routerNote, compactPrompt, modelSwitchAdvice, switchHandoffLine, writeLargeSessionHandoff, cacheLines, captureSwitchHandoff, coldCacheBlock, recordTaskCosts, captureLedger, ledgerLine,
+    decisionRule: () => { const m = req('ledger.cjs'); return m ? m.DECISION_RULE : null; } };
 };

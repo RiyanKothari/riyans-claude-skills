@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { buildLedger, formatLedger, persistLedger, commitSubject, BUDGET_CHARS } = require('./ledger.cjs');
+const { buildLedger, formatLedger, persistLedger, commitSubject, dropSuperseded, DECISION_RULE, BUDGET_CHARS } = require('./ledger.cjs');
 
 const HOOK = path.join(__dirname, '..', '.claude', 'helpers', 'learning-hook.cjs');
 const human = (content) => ({ type: 'user', promptSource: 'sdk', origin: { kind: 'human' }, message: { content } });
@@ -85,6 +85,24 @@ test('uncommitted decisions are kept: your rules, Decision: lines, and work in f
   assert.deepStrictEqual(added, ['User instruction: from now on, never push without CI passing', 'Decided: keep Opus 5.5 as the default', 'Decided: drop the replay']);
   assert.deepStrictEqual(buildLedger(t.file, { cwd: t.dir }).uncommitted, [], 'not a git checkout: nothing');
   fs.rmSync(t.dir, { recursive: true, force: true });
+});
+
+test('an instruction a later one restates is dropped; unrelated ones stay', () => {
+  const rules = ['never push without CI passing', 'always use opus models only', 'from now on push only after CI passes and the plugin smoke passes'];
+  assert.deepStrictEqual(dropSuperseded(rules), rules.slice(1), 'the later push rule replaces the earlier one');
+  assert.deepStrictEqual(dropSuperseded(['only use tabs', 'never use semicolons']), ['only use tabs', 'never use semicolons']);
+  assert.deepStrictEqual(dropSuperseded([]), []);
+});
+
+test('every session start states the Decision: convention, without the skill loaded', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ledger-rule-'));
+  const out = spawnSync(process.execPath, [HOOK, 'core'], {
+    input: JSON.stringify({ session_id: 'r1', source: 'startup' }), cwd: dir, encoding: 'utf8',
+    env: { ...process.env, HOME: dir, USERPROFILE: dir, CLAUDE_PROJECT_DIR: dir, TOKEN_HARNESS_COMPACT: 'off', SMART_MEMORY_PATH: path.join(dir, 'r.jsonl') },
+  }).stdout;
+  assert.ok(out.split('\n').includes(DECISION_RULE), out);
+  assert.match(DECISION_RULE, /^\[decisions\] .*"Decision: …"/);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('decisions and open tasks go into memory, once each', () => {

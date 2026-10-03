@@ -66,6 +66,43 @@ const STANDING = /\b(?:always|never|only|don'?t|do not|from now on|make sure|eve
 const DECISION_LINE = /^\s*(?:[-*]\s*)?\**(?:Decision|Decided)\**\s*:\s*\**\s*(.+)$/gim;
 
 /**
+ * Shown at every session start, so Claude knows the convention without the skill
+ * loaded: a decision no commit records survives /compact only if it is written down.
+ */
+const DECISION_RULE = '[decisions] When you settle something no commit will record, write it on its own line as '
+  + '"Decision: …" so it survives /compact and reaches later sessions.';
+
+const STOPWORDS = new Set(('the and for you your are but not was with this that from have just also then them they '
+  + 'want make sure always never only now dont don\'t do should will can could would please okay all any its it\'s '
+  + 'from now on every time whenever again more less use using keep get set add let put run give take').split(' '));
+
+/** Content words, with common endings cut so "passing" and "passes" match. @param {string} s */
+const contentWords = (s) => new Set((String(s).toLowerCase().match(/[a-z0-9][a-z0-9.+-]*/g) || [])
+  .filter((w) => w.length > 2 && !STOPWORDS.has(w))
+  .map((w) => (w.length > 5 ? w.replace(/(?:ing|es|ed|s)$/, '') : w)));
+
+/**
+ * Drop an instruction that a later one restates: when at least half the content words
+ * of the shorter of the two are shared, they are about the same thing and the later one
+ * wins. Only clear overlap is dropped; a contradiction in different words is left for
+ * Claude to resolve, which the ledger tells it to do (later overrides earlier).
+ * @param {string[]} rules oldest first
+ */
+function dropSuperseded(rules) {
+  return rules.filter((rule, i) => {
+    const a = contentWords(rule);
+    if (!a.size) return true;
+    return !rules.slice(i + 1).some((later) => {
+      const b = contentWords(later);
+      if (!b.size) return false;
+      let shared = 0;
+      for (const w of a) if (b.has(w)) shared++;
+      return shared / Math.min(a.size, b.size) >= 0.5;
+    });
+  });
+}
+
+/**
  * Files with uncommitted changes in `dir`: work in flight that no commit records.
  * Empty when `dir` is not a git checkout or git is unavailable.
  * @param {string|undefined} dir
@@ -158,7 +195,7 @@ function buildLedger(filePath, opts = {}) {
   const open = (todos || []).filter((t) => t && t.status !== 'completed' && t.content).map((t) => clip(t.content, 120));
   return {
     asks: lastDistinct(asks, MAX.asks),
-    rules: lastDistinct(rules, MAX.rules),
+    rules: lastDistinct(dropSuperseded(lastDistinct(rules, 50)), MAX.rules),
     decisions: lastDistinct(decisions, MAX.decisions),
     noted: lastDistinct(noted, MAX.noted),
     open: open.slice(0, MAX.open),
@@ -210,4 +247,4 @@ function persistLedger(store, l) {
   return rows.length;
 }
 
-module.exports = { buildLedger, formatLedger, persistLedger, commitSubject, uncommittedFiles, BUDGET_CHARS };
+module.exports = { buildLedger, formatLedger, persistLedger, commitSubject, uncommittedFiles, dropSuperseded, DECISION_RULE, BUDGET_CHARS };
