@@ -15,13 +15,13 @@
  *   sessionActivity: (input: any, prompt: string) => any,
  *   AGENT_PREFIX: string, MAX_NEIGHBORS: number,
  *   paths: {COMPACT_STATE: string, SWITCH_STATE: string, SWITCH_HANDOFF: string,
- *     GUARD_STATE: string, NOTICE_STATE: string, HANDOFF: string},
+ *     GUARD_STATE: string, NOTICE_STATE: string, HANDOFF: string, LEDGER: string},
  * }} env
  */
 module.exports = function createAdvice(env) {
   const { req, readJsonFile, writeJsonFile, sessionActivity, AGENT_PREFIX, MAX_NEIGHBORS } = env;
   const { isSystemText } = req('outcome/transcript.cjs') || { isSystemText: () => false };
-  const { COMPACT_STATE, SWITCH_STATE, SWITCH_HANDOFF, GUARD_STATE, NOTICE_STATE, HANDOFF } = env.paths;
+  const { COMPACT_STATE, SWITCH_STATE, SWITCH_HANDOFF, GUARD_STATE, NOTICE_STATE, HANDOFF, LEDGER } = env.paths;
 
   /**
    * The compaction prompt, governed by `rcskills config compact ...`. The prompt
@@ -199,6 +199,53 @@ module.exports = function createAdvice(env) {
     }
   }
 
+  /**
+   * Before /compact: the ledger of what this session asked, decided, left open and
+   * touched, from the full transcript the summary is about to replace. Kept in a file
+   * for the next SessionStart, and its decisions and open tasks in the memory store,
+   * where later sessions recall them. Any failure is ignored: compaction must go on.
+   * @param {any} input
+   * @param {any} store the memory store, or null
+   */
+  function captureLedger(input, store) {
+    const mod = req('ledger.cjs');
+    const tPath = input && (input.transcript_path || input.transcriptPath);
+    if (!mod || !tPath) return null;
+    try {
+      const ledger = mod.buildLedger(tPath);
+      writeJsonFile(LEDGER, { at: Date.now(), sessionId: input.session_id || null, ledger });
+      if (store && mod.persistLedger(store, ledger)) {
+        store.prune();
+        store.save();
+      }
+      return ledger;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The ledger as context: in full right after this session's /compact, and as what
+   * carries forward (decisions, open tasks) at the start of the next session, for a
+   * week. Nothing on a plain resume of the same session: its conversation is intact.
+   * @param {any} input
+   */
+  function ledgerLine(input) {
+    const mod = req('ledger.cjs');
+    const rec = readJsonFile(LEDGER);
+    if (!mod || !rec || !rec.ledger) return null;
+    const hours = (Date.now() - (Number(rec.at) || 0)) / 3600000;
+    const same = Boolean(rec.sessionId && rec.sessionId === (input && input.session_id));
+    if (input && input.source === 'compact' && same && hours < 24) {
+      return mod.formatLedger(rec.ledger, '[ledger] Before this /compact, this session');
+    }
+    if (!same && hours < 24 * 7) {
+      const carry = { asks: [], decisions: rec.ledger.decisions || [], open: rec.ledger.open || [], files: [] };
+      return mod.formatLedger(carry, `[ledger] The last compacted session (${Math.round(hours)}h ago)`);
+    }
+    return null;
+  }
+
   function captureSwitchHandoff(input) {
     const router = req('model-router/index.cjs');
     const mod = req('model-router/switch-handoff.cjs');
@@ -303,5 +350,5 @@ module.exports = function createAdvice(env) {
     return nc ? nc.mergeNext(lines) : lines;
   }
 
-  return { finish, findNeighbors, routerNote, compactPrompt, modelSwitchAdvice, switchHandoffLine, writeLargeSessionHandoff, cacheLines, captureSwitchHandoff, coldCacheBlock, recordTaskCosts };
+  return { finish, findNeighbors, routerNote, compactPrompt, modelSwitchAdvice, switchHandoffLine, writeLargeSessionHandoff, cacheLines, captureSwitchHandoff, coldCacheBlock, recordTaskCosts, captureLedger, ledgerLine };
 };

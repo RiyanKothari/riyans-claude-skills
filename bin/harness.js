@@ -15,10 +15,10 @@ const MARKER = 'riyans-claude-skills';
  */
 const PROFILES = {
   minimal: { hooks: [], desc: 'skill only, no hooks, zero per-turn overhead' },
-  standard: { hooks: ['core', 'recall', 'loop', 'switch'], desc: 'fixed core at session start + per-prompt recall + ralph loop + cache notices' },
+  standard: { hooks: ['core', 'recall', 'loop', 'switch', 'precompact'], desc: 'fixed core at session start + per-prompt recall + ralph loop + cache notices + a ledger kept across /compact' },
   // Outcome capture rides the Stop hook that already runs, instead of a second
   // process at every stop (650ms measured per spawn).
-  strict: { hooks: ['core', 'recall', 'loop', 'switch'], learn: true, desc: 'standard + outcome capture in the same Stop hook (the learning loop)' },
+  strict: { hooks: ['core', 'recall', 'loop', 'switch', 'precompact'], learn: true, desc: 'standard + outcome capture in the same Stop hook (the learning loop)' },
 };
 
 // Timeouts are seconds: Claude Code multiplies them by 1000. Versions before 1.1.0
@@ -29,6 +29,8 @@ const HOOK_SPEC = {
   loop: { event: 'Stop', timeout: 6 },
   // Fires only when the model changes, so it adds nothing per turn.
   switch: { event: 'PreModelSwitch', timeout: 6 },
+  // Fires only on /compact or auto-compaction: reads the whole transcript once.
+  precompact: { event: 'PreCompact', timeout: 10 },
 };
 
 // Claude Code reads user settings from CLAUDE_CONFIG_DIR when it is set, so a

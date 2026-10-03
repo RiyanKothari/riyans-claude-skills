@@ -28,7 +28,7 @@ function env(activity = null) {
     MAX_NEIGHBORS: 5,
     paths: {
       COMPACT_STATE: p('compact.json'), SWITCH_STATE: p('switch.json'), SWITCH_HANDOFF: p('handoff-switch.json'),
-      GUARD_STATE: p('guard.json'), NOTICE_STATE: p('notice.json'), HANDOFF: p('handoff.json'),
+      GUARD_STATE: p('guard.json'), NOTICE_STATE: p('notice.json'), HANDOFF: p('handoff.json'), LEDGER: p('ledger.json'),
     },
   });
   return { advice, dir, read, p, clean: () => fs.rmSync(dir, { recursive: true, force: true }) };

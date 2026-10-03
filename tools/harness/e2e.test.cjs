@@ -135,7 +135,7 @@ test('re-install repairs millisecond timeouts written by versions before 1.1.0',
 
   run(dir, ['install', '--profile', 'standard']);
   const timeouts = Object.values(settings(dir).hooks).flatMap((groups) => groups.map((g) => g.hooks[0].timeout));
-  assert.strictEqual(timeouts.length, 4);
+  assert.strictEqual(timeouts.length, 5);
   assert.ok(timeouts.every((t) => t <= 10), `seconds, got ${timeouts}`);
   cleanup(dir);
 });

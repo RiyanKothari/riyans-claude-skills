@@ -2,20 +2,15 @@
 'use strict';
 
 /**
- * Closes the loop between routing and outcomes.
+ * Every hook mode. core (SessionStart): memory core, ledger or handoff, compaction prompt.
+ * recall (UserPromptSubmit): memory, routing and model advice. loop (Stop): ralph loops
+ * and task costs. finalize (Stop, legacy): outcome record. switch (PreModelSwitch):
+ * re-cache check and reasoning handoff. precompact (PreCompact): the session ledger.
  *
- *   core     (SessionStart)     - fixed core memory, last-session handoff, compaction prompt
- *   recall   (UserPromptSubmit) - relevant memory, routing advice and compaction prompt
- *   loop     (Stop)             - keep a `rcskills loop` going until its promise or cap
- *   finalize (Stop)             - score the turn from the transcript and store it as evidence
- *
- * Every mode must exit 0 and stay silent on failure: a hook that throws breaks
- * every prompt submission, and one that chatters costs more than it saves.
- *
- * `--global` marks an invocation from ~/.claude/settings.json. Tools always load
- * from this harness repo; project data goes under ~/.claude so prompts are never
- * written into another repo's working tree; and inside this repo the global copy
- * stands down, because the project settings already run the hook.
+ * Every mode exits 0 and stays silent on failure: a hook that throws breaks every prompt,
+ * and one that chatters costs more than it saves. `--global` marks a call from
+ * ~/.claude/settings.json: tools load from this repo, project data goes under ~/.claude
+ * so prompts never land in another repo, and inside this repo the global copy stands down.
  */
 
 const fs = require('fs');
@@ -52,6 +47,7 @@ const HANDOFF = path.join(DATA, 'handoff.json');
 const COMPACT_STATE = path.join(DATA, 'compact-state.json');
 const SWITCH_STATE = path.join(DATA, 'model-switch-state.json');
 const SWITCH_HANDOFF = path.join(DATA, 'switch-handoff.json');
+const LEDGER = path.join(DATA, 'ledger.json');
 const GUARD_STATE = path.join(DATA, 'cache-guard-state.json');
 const NOTICE_STATE = path.join(DATA, 'cache-notice-state.json');
 // Pinned policy lives in the harness repo's own store and follows every project.
@@ -145,7 +141,7 @@ const NO_ADVICE = {
   modelSwitchAdvice: () => ({ message: null, hold: null }),
   switchHandoffLine: () => null, writeLargeSessionHandoff: () => {},
   cacheLines: () => [],
-  captureSwitchHandoff: () => {}, recordTaskCosts: () => {},
+  captureSwitchHandoff: () => {}, recordTaskCosts: () => {}, captureLedger: () => null, ledgerLine: () => null,
   coldCacheBlock: () => null,
 };
 const advice = (() => {
@@ -153,7 +149,7 @@ const advice = (() => {
   try {
     return create ? create({
       req, readJsonFile, writeJsonFile, sessionActivity, AGENT_PREFIX, MAX_NEIGHBORS,
-      paths: { COMPACT_STATE, SWITCH_STATE, SWITCH_HANDOFF, GUARD_STATE, NOTICE_STATE, HANDOFF },
+      paths: { COMPACT_STATE, SWITCH_STATE, SWITCH_HANDOFF, GUARD_STATE, NOTICE_STATE, HANDOFF, LEDGER },
     }) : NO_ADVICE;
   } catch {
     return NO_ADVICE;
@@ -340,7 +336,10 @@ function modeCore() {
   const core = coreTexts();
   if (core.length) out.push(`[core] ${core.join(' | ')}`);
 
-  const h = readJsonFile(HANDOFF);
+  // After /compact, and at the next session: the ledger kept before compaction.
+  const ledger = advice.ledgerLine(input);
+  if (ledger) out.push(ledger);
+  const h = ledger ? null : readJsonFile(HANDOFF);
   if (h && h.summary) {
     const ago = h.at ? Math.round((Date.now() - h.at) / 3600000) : null;
     out.push(`[last session${ago !== null ? ` ${ago}h ago` : ''}] ${h.summary}`);
@@ -369,11 +368,9 @@ function modeCore() {
 }
 
 /**
- * Stop. Derives what the turn actually cost from the transcript rather than
- * counting live: a PostToolUse hook spawned one node process per tool call
- * (~166ms measured), while the transcript already holds the same facts.
+ * Stores what the finished turn actually did, so the router learns from outcomes —
+ * from the transcript at Stop, never live: a PostToolUse hook cost ~166ms per tool call.
  */
-/** Stores what the finished turn actually did, so the router learns from outcomes. */
 function recordOutcome(input) {
   const scoreMod = req('outcome/score.cjs');
   const tsMod = req('outcome/transcript.cjs');
@@ -496,4 +493,6 @@ else if (mode === 'recall') modeRecall();
 else if (mode === 'loop') modeLoop();
 else if (mode === 'finalize') modeFinalize();
 else if (mode === 'switch') modeSwitch();
+// Before /compact: keep what the summary may lose, in a file and in memory.
+else if (mode === 'precompact') { advice.captureLedger(parseInput(), openStore()); process.exit(0); }
 else process.exit(0);

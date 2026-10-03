@@ -102,6 +102,8 @@ ways, the plugin's hooks stand down so nothing runs twice.
 | Context worth compacting | `Next: /compact keep … — 360k of context, $0.18 per message to re-read.` | Run it |
 | You start a task on any model but the best per task (today Opus 5.5: $13.04 and 1h a task vs Sonnet 5.5's $14.20 and 1.5h; your own costs decide once `rcskills backtest` shows 15 complex tasks on each, or 5 paired runs from `rcskills compare`) | Held once before it runs, with the reason, `/compact` → `/model claude-opus-5-5`, and your message handed back; after that, every reply ends with the same line | Switch and resend, or just resend |
 | You ask a question or make a small edit there | Told as the reply's last line, never held | Switch when convenient |
+| Right after `/compact` | `[ledger]`: what the session decided (its commits), what is still open, recent asks, files edited | Nothing: Claude continues from it |
+| The next session after a `/compact` | `[ledger]` with the decisions and open tasks that carry forward; they are also in memory, recalled when a prompt returns to them | Nothing |
 | The first prompt after changing model | `[handoff]`: the reasoning, open tasks and files the old model left | Nothing: Claude continues from it |
 | `/model` re-selecting the model already in use | A confirmation, with the re-cache price | Cancel unless you meant it |
 | A new session after `/clear` | `[last session 2h ago]` recent asks, files and last reply | Nothing: Claude has the thread |

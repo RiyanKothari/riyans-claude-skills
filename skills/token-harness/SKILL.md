@@ -84,6 +84,13 @@ single request — an unused MCP server costs its whole schema forever. Skills a
 paid only when they load, so push detail into `references/`. `npm run audit`
 ranks offenders by that leverage.
 
+**6b. Continue from a `[ledger]` line.** No hook can write into a /compact summary, so
+the PreCompact hook reads the full transcript first and keeps a ledger: decisions (the
+session's commits), open tasks (the last todo list), recent asks and files edited. It is
+shown right after the compaction and at the next session, and its decisions and open
+tasks go into memory, where recall brings them back when a prompt returns to the work.
+Treat it as settled: do not redo decided work.
+
 **7. Copy every `[next]` line, word for word, as the last line of the reply.** Only
 the user can run /compact or /model, so the hook writes the finished line — the
 command, what to keep, and what it costs — and it must reach them every time. One

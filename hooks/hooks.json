@@ -1,5 +1,5 @@
 {
-  "description": "Memory core at session start, recall and cache advice per prompt, ralph loops at stop, and a same-model /model check.",
+  "description": "Memory core at session start, recall and cache advice per prompt, ralph loops at stop, a same-model /model check, and a session ledger kept across /compact.",
   "hooks": {
     "SessionStart": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/.claude/helpers/learning-hook.cjs\" core --global --plugin", "timeout": 6 }] }
@@ -12,6 +12,9 @@
     ],
     "PreModelSwitch": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/.claude/helpers/learning-hook.cjs\" switch --global --plugin", "timeout": 6 }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/.claude/helpers/learning-hook.cjs\" precompact --global --plugin", "timeout": 10 }] }
     ]
   }
 }
