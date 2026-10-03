@@ -89,7 +89,9 @@ the PreCompact hook reads the full transcript first and keeps a ledger: decision
 session's commits), open tasks (the last todo list), recent asks and files edited. It is
 shown right after the compaction and at the next session, and its decisions and open
 tasks go into memory, where recall brings them back when a prompt returns to the work.
-Treat it as settled: do not redo decided work.
+Your rule-like requests (always, never, only, from now on) and uncommitted work are kept
+too. When you settle something no commit will record, write it on its own line as
+`Decision: …` so the ledger keeps it. Treat the ledger as settled: do not redo decided work.
 
 **7. Copy every `[next]` line, word for word, as the last line of the reply.** Only
 the user can run /compact or /model, so the hook writes the finished line — the

@@ -17,7 +17,7 @@
 const fs = require('fs');
 const { isHumanPrompt, isSystemText } = require('./outcome/transcript.cjs');
 
-const MAX = { asks: 6, decisions: 8, open: 8, files: 12 };
+const MAX = { asks: 6, rules: 5, decisions: 8, noted: 6, open: 8, files: 12 };
 const BUDGET_CHARS = 1600;
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
@@ -54,19 +54,61 @@ function commitSubject(command) {
 }
 
 /**
- * @param {string} filePath a session transcript (.jsonl)
- * @returns {{asks: string[], decisions: string[], open: string[], files: string[]}}
+ * A request that sets a rule rather than asking for one piece of work: the user's own
+ * decisions ("only Opus models", "never route to older models", "from now on…").
  */
-function buildLedger(filePath) {
+const STANDING = /\b(?:always|never|only|don'?t|do not|from now on|make sure|every time|whenever|stop doing|no more)\b/i;
+
+/**
+ * A decision Claude wrote down as one: a line starting "Decision:" or "Decided:".
+ * The skill asks for this whenever something is settled that no commit will record.
+ */
+const DECISION_LINE = /^\s*(?:[-*]\s*)?\**(?:Decision|Decided)\**\s*:\s*\**\s*(.+)$/gim;
+
+/**
+ * Files with uncommitted changes in `dir`: work in flight that no commit records.
+ * Empty when `dir` is not a git checkout or git is unavailable.
+ * @param {string|undefined} dir
+ */
+function uncommittedFiles(dir) {
+  if (!dir) return [];
+  try {
+    const { spawnSync } = require('child_process');
+    // Only the project's own repository: git climbs to any parent repo, and a home
+    // folder under version control would list every unrelated file in it.
+    const top = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 3000 });
+    const norm = (p) => require('path').resolve(String(p).trim()).replace(/\\/g, '/').toLowerCase();
+    if (top.status !== 0 || norm(top.stdout) !== norm(dir)) return [];
+    const r = spawnSync('git', ['-C', dir, 'status', '--porcelain'], { encoding: 'utf8', timeout: 3000 });
+    if (r.status !== 0) return [];
+    return String(r.stdout).split('\n').map((l) => l.slice(3).trim().replace(/^"|"$/g, ''))
+      .filter((f) => f && !/(?:^|\/)\.claude\/(?:memory|worktrees)\//.test(f)).slice(0, MAX.files);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * @typedef {{asks: string[], decisions: string[], noted?: string[], rules?: string[], open: string[], files: string[], uncommitted?: string[]}} Ledger
+ */
+
+/**
+ * @param {string} filePath a session transcript (.jsonl)
+ * @param {{cwd?: string}} [opts] the project directory, to list uncommitted work
+ * @returns {Ledger}
+ */
+function buildLedger(filePath, opts = {}) {
   /** @type {string[]} */ const asks = [];
+  /** @type {string[]} */ const rules = [];
   /** @type {string[]} */ const decisions = [];
+  /** @type {string[]} */ const noted = [];
   /** @type {string[]} */ const files = [];
   /** @type {Array<{content?: string, status?: string}>|null} */ let todos = null;
   let text = '';
   try {
     text = fs.readFileSync(filePath, 'utf8');
   } catch {
-    return { asks: [], decisions: [], open: [], files: [] };
+    return { asks: [], decisions: [], noted: [], rules: [], open: [], files: [], uncommitted: [] };
   }
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
@@ -78,11 +120,18 @@ function buildLedger(filePath) {
     }
     if (isHumanPrompt(o)) {
       const ask = o.message.content.trim();
-      if (!ask.startsWith('/') && !isSystemText(ask)) asks.push(clip(ask, 140));
+      if (!ask.startsWith('/') && !isSystemText(ask)) {
+        asks.push(clip(ask, 140));
+        if (STANDING.test(ask)) rules.push(clip(ask, 160));
+      }
       continue;
     }
     const content = o.type === 'assistant' && o.message && Array.isArray(o.message.content) ? o.message.content : [];
     for (const b of content) {
+      if (b && b.type === 'text' && typeof b.text === 'string') {
+        for (const m of b.text.matchAll(DECISION_LINE)) noted.push(clip(m[1], 160));
+        continue;
+      }
       if (!b || b.type !== 'tool_use' || !b.input) continue;
       if (b.name === 'Bash' || b.name === 'PowerShell') {
         const subject = commitSubject(b.input.command);
@@ -99,24 +148,33 @@ function buildLedger(filePath) {
   const open = (todos || []).filter((t) => t && t.status !== 'completed' && t.content).map((t) => clip(t.content, 120));
   return {
     asks: lastDistinct(asks, MAX.asks),
+    rules: lastDistinct(rules, MAX.rules),
     decisions: lastDistinct(decisions, MAX.decisions),
+    noted: lastDistinct(noted, MAX.noted),
     open: open.slice(0, MAX.open),
     files: lastDistinct(files, MAX.files).map((f) => f.split('/').slice(-2).join('/')),
+    uncommitted: uncommittedFiles(opts.cwd),
   };
 }
 
-const empty = (l) => !l || (!l.asks.length && !l.decisions.length && !l.open.length && !l.files.length);
+/** @param {Ledger|null|undefined} l */
+const empty = (l) => !l || ['asks', 'rules', 'decisions', 'noted', 'open', 'files', 'uncommitted']
+  .every((k) => !(/** @type {any} */ (l)[k] || []).length);
 
 /**
- * One bounded block of context. `lead` says where it came from.
- * @param {{asks: string[], decisions: string[], open: string[], files: string[]}} l
+ * One bounded block of context. `lead` says where it came from. The parts that bind
+ * future work come first, so a trim at the budget cuts the least important.
+ * @param {Ledger} l
  * @param {string} lead
  */
 function formatLedger(l, lead) {
   if (empty(l)) return null;
   const parts = [lead];
+  if ((l.rules || []).length) parts.push(`your standing instructions, oldest first (a later one overrides an earlier): ${(l.rules || []).map((r) => `"${r}"`).join(' · ')}`);
   if (l.decisions.length) parts.push(`decided and committed: ${l.decisions.join(' · ')}`);
+  if ((l.noted || []).length) parts.push(`decided, not committed: ${(l.noted || []).join(' · ')}`);
   if (l.open.length) parts.push(`still open: ${l.open.join(' · ')}`);
+  if ((l.uncommitted || []).length) parts.push(`uncommitted changes in: ${(l.uncommitted || []).join(', ')}`);
   if (l.asks.length) parts.push(`recent asks: ${l.asks.map((a) => `"${a}"`).join(' · ')}`);
   if (l.files.length) parts.push(`files edited: ${l.files.join(', ')}`);
   parts.push('Continue from this; do not redo decided work.');
@@ -126,22 +184,20 @@ function formatLedger(l, lead) {
 }
 
 /**
- * Put the decisions and open tasks where future sessions look: the memory store,
- * recalled per prompt by relevance. Exact repeats only refresh the existing record.
+ * Put what binds future work where future sessions look: the memory store, recalled
+ * per prompt by relevance. Exact repeats only refresh the existing record.
  * @param {{add: (r: object) => any}} store
- * @param {{decisions: string[], open: string[]}} l
+ * @param {Ledger} l
  */
 function persistLedger(store, l) {
-  let n = 0;
-  for (const d of l.decisions) {
-    store.add({ kind: 'decision', text: `Decided and committed: ${d}`, tags: ['decision', 'ledger'] });
-    n++;
-  }
-  for (const t of l.open) {
-    store.add({ kind: 'task', text: `Open task: ${t}`, tags: ['task', 'open', 'ledger'] });
-    n++;
-  }
-  return n;
+  const rows = [
+    ...(l.rules || []).map((t) => ({ kind: 'decision', text: `User instruction: ${t}`, tags: ['decision', 'instruction', 'ledger'] })),
+    ...l.decisions.map((t) => ({ kind: 'decision', text: `Decided and committed: ${t}`, tags: ['decision', 'ledger'] })),
+    ...(l.noted || []).map((t) => ({ kind: 'decision', text: `Decided: ${t}`, tags: ['decision', 'ledger'] })),
+    ...l.open.map((t) => ({ kind: 'task', text: `Open task: ${t}`, tags: ['task', 'open', 'ledger'] })),
+  ];
+  for (const r of rows) store.add(r);
+  return rows.length;
 }
 
-module.exports = { buildLedger, formatLedger, persistLedger, commitSubject, BUDGET_CHARS };
+module.exports = { buildLedger, formatLedger, persistLedger, commitSubject, uncommittedFiles, BUDGET_CHARS };

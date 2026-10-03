@@ -212,7 +212,7 @@ module.exports = function createAdvice(env) {
     const tPath = input && (input.transcript_path || input.transcriptPath);
     if (!mod || !tPath) return null;
     try {
-      const ledger = mod.buildLedger(tPath);
+      const ledger = mod.buildLedger(tPath, { cwd: input.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd() });
       writeJsonFile(LEDGER, { at: Date.now(), sessionId: input.session_id || null, ledger });
       if (store && mod.persistLedger(store, ledger)) {
         store.prune();
@@ -240,7 +240,9 @@ module.exports = function createAdvice(env) {
       return mod.formatLedger(rec.ledger, '[ledger] Before this /compact, this session');
     }
     if (!same && hours < 24 * 7) {
-      const carry = { asks: [], decisions: rec.ledger.decisions || [], open: rec.ledger.open || [], files: [] };
+      // What binds future work carries forward; what was merely asked or touched does not.
+      const l = rec.ledger;
+      const carry = { asks: [], files: [], rules: l.rules || [], decisions: l.decisions || [], noted: l.noted || [], open: l.open || [], uncommitted: l.uncommitted || [] };
       return mod.formatLedger(carry, `[ledger] The last compacted session (${Math.round(hours)}h ago)`);
     }
     return null;
