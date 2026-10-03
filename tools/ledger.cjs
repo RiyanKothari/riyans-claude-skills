@@ -77,7 +77,17 @@ function uncommittedFiles(dir) {
     // Only the project's own repository: git climbs to any parent repo, and a home
     // folder under version control would list every unrelated file in it.
     const top = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 3000 });
-    const norm = (p) => require('path').resolve(String(p).trim()).replace(/\\/g, '/').toLowerCase();
+    // Real paths: Windows can name one folder two ways (RUNNER~1 vs runneradmin).
+    const norm = (p) => {
+      const abs = require('path').resolve(String(p).trim());
+      let real = abs;
+      try {
+        real = fs.realpathSync.native(abs);
+      } catch {
+        // keep the resolved path
+      }
+      return real.replace(/\\/g, '/').toLowerCase();
+    };
     if (top.status !== 0 || norm(top.stdout) !== norm(dir)) return [];
     const r = spawnSync('git', ['-C', dir, 'status', '--porcelain'], { encoding: 'utf8', timeout: 3000 });
     if (r.status !== 0) return [];
