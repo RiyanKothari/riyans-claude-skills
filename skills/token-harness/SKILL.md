@@ -91,7 +91,8 @@ shown right after the compaction and at the next session, and its decisions and 
 tasks go into memory, where recall brings them back when a prompt returns to the work.
 Your rule-like requests (always, never, only, from now on) and uncommitted work are kept
 too. When you settle something no commit will record, write it on its own line as
-`Decision: …` so the ledger keeps it. Treat the ledger as settled: do not redo decided work.
+`Decision: …` so the ledger keeps it; every session start says so in a `[decisions]` line.
+An instruction a later one restates is dropped; for any other conflict, the later wins. Treat the ledger as settled: do not redo decided work.
 
 **7. Copy every `[next]` line, word for word, as the last line of the reply.** Only
 the user can run /compact or /model, so the hook writes the finished line — the
