@@ -110,7 +110,7 @@ function bestOf(family) {
  * is cheaper per token and takes more of them. Fable is never chosen automatically.
  */
 /**
- * @typedef {Record<string, {tasks: number, usdPerTask: number, paired?: {tasks: number, usdPerTask: number}|null}>} Observed
+ * @typedef {Record<string, {tasks: number, usdPerTask: number, requestsPerTask?: number|null, paired?: {tasks: number, usdPerTask: number, requestsPerTask?: number}|null}>} Observed
  * Median cost of a complex task per model on the user's own sessions (observed.cjs).
  */
 
@@ -127,7 +127,9 @@ const { MIN_TASKS: MIN_LOCAL_TASKS } = require('./observed.cjs');
 function taskCosts(models, observed) {
   // Paired runs first — the same task on each model is the only controlled comparison —
   // then everyday tasks, then the benchmark.
-  const paired = Boolean(observed && models.every((m) => (observed[m]?.paired?.tasks || 0) >= MIN_PAIRS));
+  // Paired runs decide only on work the size of the user's real tasks: on small edits
+  // the cheaper-per-token model wins by default, and on long tasks that can reverse.
+  const paired = Boolean(observed && models.every((m) => (observed[m]?.paired?.tasks || 0) >= MIN_PAIRS && pairsComparable(observed[m])));
   const natural = !paired && Boolean(observed && models.every((m) => (observed[m]?.tasks || 0) >= MIN_LOCAL_TASKS));
   /** @type {Record<string, number>} */
   const usd = {};
@@ -141,6 +143,21 @@ function taskCosts(models, observed) {
 
 /** Paired tasks per model before `rcskills compare` results decide. */
 const MIN_PAIRS = 5;
+
+/** Requests a paired task needs when there are no everyday tasks to compare with. */
+const MIN_PAIRED_REQUESTS = 10;
+
+/**
+ * Whether a model's paired runs were real-size work: at least half the requests of its
+ * everyday complex tasks (or MIN_PAIRED_REQUESTS when it has too few of those).
+ * @param {{tasks?: number, requestsPerTask?: number|null, paired?: {tasks: number, usdPerTask: number, requestsPerTask?: number}|null}|undefined} o
+ */
+function pairsComparable(o) {
+  const p = o && o.paired;
+  if (!p) return false;
+  const real = o && (o.tasks || 0) >= MIN_PAIRS && o.requestsPerTask ? o.requestsPerTask / 2 : MIN_PAIRED_REQUESTS;
+  return (p.requestsPerTask || 0) >= real;
+}
 
 /**
  * @param {Observed|null} [observed]
@@ -367,8 +384,11 @@ function choiceReport(observed, available = null) {
   if (source !== 'bench') return `model choice: ${bestModel(observed, available)}, decided by ${by}${note}`;
   const counts = fair.map((m) => `${m} ${Math.min(observed?.[m]?.tasks || 0, MIN_LOCAL_TASKS)}/${MIN_LOCAL_TASKS}`).join(', ');
   const pairs = fair.map((m) => `${m} ${Math.min(observed?.[m]?.paired?.tasks || 0, MIN_PAIRS)}/${MIN_PAIRS}`).join(', ');
+  const small = fair.some((m) => (observed?.[m]?.paired?.tasks || 0) >= MIN_PAIRS && !pairsComparable(observed?.[m]))
+    ? `; paired runs so far are smaller than your real tasks (median ${fair.map((m) => observed?.[m]?.paired?.requestsPerTask ?? 0).join(' / ')} requests), so they do not decide`
+    : '';
   return `model choice: ${bestModel(observed, available)}, decided by ${by} until each contender has ${MIN_LOCAL_TASKS} complex tasks `
-    + `on your sessions (${counts}) or ${MIN_PAIRS} paired runs from rcskills compare (${pairs})${note}`;
+    + `on your sessions (${counts}) or ${MIN_PAIRS} real-size paired runs from rcskills compare (${pairs})${small}${note}`;
 }
 
 module.exports = {

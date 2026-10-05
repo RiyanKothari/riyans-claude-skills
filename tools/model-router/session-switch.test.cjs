@@ -130,7 +130,7 @@ test('a quality move is held without a price argument, whatever the session size
 });
 
 test('the choice report says what decides and what is still missing', () => {
-  assert.strictEqual(choiceReport({}), 'model choice: claude-opus-5-5, decided by the Coding Agent Index (max effort) until each contender has 15 complex tasks on your sessions (claude-sonnet-5-5 0/15, claude-opus-5-5 0/15) or 5 paired runs from rcskills compare (claude-sonnet-5-5 0/5, claude-opus-5-5 0/5)');
+  assert.strictEqual(choiceReport({}), 'model choice: claude-opus-5-5, decided by the Coding Agent Index (max effort) until each contender has 15 complex tasks on your sessions (claude-sonnet-5-5 0/15, claude-opus-5-5 0/15) or 5 real-size paired runs from rcskills compare (claude-sonnet-5-5 0/5, claude-opus-5-5 0/5)');
   const both = { [SONNET55]: { tasks: 40, usdPerTask: 2 }, [OPUS55]: { tasks: 15, usdPerTask: 3 } };
   assert.strictEqual(choiceReport(both), 'model choice: claude-sonnet-5-5, decided by your own task costs');
 });
@@ -262,8 +262,8 @@ test('a system notice is never held or advised: the user did not send it', () =>
 
 test('paired runs on the same tasks decide before anything else', () => {
   const mine = {
-    [SONNET55]: { tasks: 30, usdPerTask: 9, paired: { tasks: 5, usdPerTask: 0.3 } },
-    [OPUS55]: { tasks: 30, usdPerTask: 2, paired: { tasks: 6, usdPerTask: 0.5 } },
+    [SONNET55]: { tasks: 30, usdPerTask: 9, paired: { tasks: 5, usdPerTask: 0.3, requestsPerTask: 20 } },
+    [OPUS55]: { tasks: 30, usdPerTask: 2, paired: { tasks: 6, usdPerTask: 0.5, requestsPerTask: 18 } },
   };
   assert.strictEqual(bestModel(mine), SONNET55, 'controlled pairs outrank everyday costs');
   const p = predictModel({ model: OPUS55, prompt: 'build the export pipeline', observed: mine });
@@ -282,4 +282,20 @@ test('only models your sessions have run are ever recommended', () => {
   assert.strictEqual(p.want, null, 'already on the only runnable contender');
   assert.strictEqual(choiceReport({}, [OPUS55]), 'model choice: claude-opus-5-5, the only contender your sessions can run (claude-sonnet-5-5 left out: never run in your sessions, so your Claude Code may not offer it)');
   assert.strictEqual(choiceReport({}, []), choiceReport({}), 'an empty list filters nothing');
+});
+
+test('paired runs on small tasks are recorded but do not decide', () => {
+  // Found 2026-10-06: 5 paired edits of ~4 requests flipped the choice to Sonnet 5.5,
+  // while real complex tasks here take ~20 requests and per-task costs can reverse.
+  const small = {
+    [SONNET55]: { tasks: 0, usdPerTask: 0, paired: { tasks: 5, usdPerTask: 0.04, requestsPerTask: 4 } },
+    [OPUS55]: { tasks: 40, usdPerTask: 2.9, requestsPerTask: 21, paired: { tasks: 5, usdPerTask: 0.09, requestsPerTask: 3 } },
+  };
+  assert.strictEqual(bestModel(small), OPUS55, 'the benchmark still decides');
+  assert.match(choiceReport(small), /paired runs so far are smaller than your real tasks \(median 4 \/ 3 requests\), so they do not decide/);
+  const real = {
+    [SONNET55]: { tasks: 0, usdPerTask: 0, paired: { tasks: 5, usdPerTask: 1.5, requestsPerTask: 18 } },
+    [OPUS55]: { tasks: 40, usdPerTask: 2.9, requestsPerTask: 21, paired: { tasks: 5, usdPerTask: 2.5, requestsPerTask: 16 } },
+  };
+  assert.strictEqual(bestModel(real), SONNET55, 'real-size pairs decide');
 });

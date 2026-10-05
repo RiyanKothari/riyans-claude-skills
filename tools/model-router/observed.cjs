@@ -163,20 +163,24 @@ const median = (xs) => {
  * @param {{models: Record<string, {tasks: Array<{usd: number, requests?: number, paired?: boolean}>}>}} data
  */
 function summarize(data) {
-  /** @type {Record<string, {tasks: number, usdPerTask: number, usdPerRequest: number|null, requestsPerTask: number|null, paired: {tasks: number, usdPerTask: number}|null}>} */
+  /** @type {Record<string, {tasks: number, usdPerTask: number, usdPerRequest: number|null, requestsPerTask: number|null, paired: {tasks: number, usdPerTask: number, requestsPerTask?: number}|null}>} */
   const out = {};
   for (const [model, m] of Object.entries((data && data.models) || {})) {
-    const tasks = (m.tasks || []).filter((t) => t.usd > 0);
-    if (!tasks.length) continue;
+    const all = (m.tasks || []).filter((t) => t.usd > 0);
+    if (!all.length) continue;
+    // Everyday tasks and paired runs are kept apart: a handful of small paired tasks
+    // would otherwise drag the everyday median.
+    const tasks = all.filter((t) => !t.paired);
+    const pairs = all.filter((t) => t.paired);
     const counted = tasks.filter((t) => (t.requests || 0) > 0);
     out[model] = {
       tasks: tasks.length,
-      usdPerTask: median(tasks.map((t) => t.usd)),
+      usdPerTask: tasks.length ? median(tasks.map((t) => t.usd)) : 0,
       usdPerRequest: counted.length ? median(counted.map((t) => t.usd / (t.requests || 1))) : null,
       requestsPerTask: counted.length ? median(counted.map((t) => t.requests || 0)) : null,
       // Same task on each model (rcskills compare): the controlled comparison.
-      paired: tasks.some((t) => t.paired)
-        ? { tasks: tasks.filter((t) => t.paired).length, usdPerTask: median(tasks.filter((t) => t.paired).map((t) => t.usd)) }
+      paired: pairs.length
+        ? { tasks: pairs.length, usdPerTask: median(pairs.map((t) => t.usd)), requestsPerTask: median(pairs.map((t) => t.requests || 0)) }
         : null,
     };
   }
@@ -190,7 +194,12 @@ function formatSummary(sum) {
     ...rows.map(([m, s]) => {
       const split = s.usdPerRequest !== null && s.requestsPerTask !== null
         ? ` ($${s.usdPerRequest.toFixed(3)} a request x ${Math.round(s.requestsPerTask)} requests)` : '';
-      return `  ${m.padEnd(20)} $${s.usdPerTask.toFixed(2)}${split} over ${s.tasks} task(s)${s.tasks < MIN_TASKS ? ` — ${MIN_TASKS} needed to count` : ''}`;
+      const p = s.paired;
+      const pairs = p ? `; paired runs: $${p.usdPerTask.toFixed(2)} over ${p.tasks} (median ${Math.round(p.requestsPerTask || 0)} requests)` : '';
+      const everyday = s.tasks
+        ? `$${s.usdPerTask.toFixed(2)}${split} over ${s.tasks} task(s)${s.tasks < MIN_TASKS ? ` — ${MIN_TASKS} needed to count` : ''}`
+        : 'no everyday tasks';
+      return `  ${m.padEnd(20)} ${everyday}${pairs}`;
     }),
   ].join('\n');
 }

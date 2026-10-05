@@ -34,8 +34,8 @@ test('every task runs on every model, and only complete pairs are recorded as pa
     'add validation/claude-sonnet-5-5', 'add validation/claude-opus-5-5', 'breaks/claude-sonnet-5-5', 'breaks/claude-opus-5-5',
   ]);
   const sum = observed.summarize(observed.load(t.store));
-  assert.deepStrictEqual(sum['claude-sonnet-5-5'].paired, { tasks: 1, usdPerTask: 0.3 });
-  assert.deepStrictEqual(sum['claude-opus-5-5'].paired, { tasks: 1, usdPerTask: 0.5 });
+  assert.deepStrictEqual(sum['claude-sonnet-5-5'].paired, { tasks: 1, usdPerTask: 0.3, requestsPerTask: 10 });
+  assert.deepStrictEqual(sum['claude-opus-5-5'].paired, { tasks: 1, usdPerTask: 0.5, requestsPerTask: 10 });
   assert.match(format(out), /\[not recorded\] breaks[\s\S]*failed: budget exceeded/);
   fs.rmSync(t.dir, { recursive: true, force: true });
 });
