@@ -1,7 +1,7 @@
 ---
 name: rc-sonnet
 description: Bounded, clearly specified implementation — a function with a known contract, tests for known behaviour, a focused bug fix whose cause is already understood. Use when a subtask is ordinary implementation that can be fully described in a brief and does not need deep architectural reasoning.
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
