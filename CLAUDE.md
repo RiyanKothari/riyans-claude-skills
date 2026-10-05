@@ -137,7 +137,8 @@ tokens. It carries standing policy across model swaps and context resets.
 
 - Pinned records are always core (`npm run mem -- add "..." --pin`).
 - A record retrieved 5+ times that reaches full strength graduates into core on its
-  own evidence. The core curates itself; do not hand-pin what usage proves.
+  own evidence — knowledge only: raw prompts (outcomes) and open tasks never do. The
+  core curates itself; do not hand-pin what usage proves.
 
 **Per-prompt recall** — BM25-ranked, capped at 350 tokens, silent when nothing
 scores. Query it; do not dump memory into context.

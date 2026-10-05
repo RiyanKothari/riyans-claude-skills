@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 
 const DAY_MS = 86400000;
+/** Record kinds that never graduate into the fixed core, however often retrieved. */
+const TRANSIENT_KINDS = new Set(['outcome', 'task']);
 const K1 = 1.5;
 const B = 0.75;
 
@@ -282,8 +284,11 @@ class MemoryStore {
     const minUses = opts.minUses ?? 5;
     const budget = opts.budgetTokens ?? Infinity;
 
+    // Only knowledge earns permanence. An outcome is a raw prompt kept for the router,
+    // and a task is transient by nature: retrieved often, they would still put stale
+    // requests ("fix completeness") into every session's core.
     const eligible = this.records.filter(
-      (r) => r.pinned || (r.uses >= minUses && r.baseStrength >= this.cfg.maxBaseStrength),
+      (r) => r.pinned || (!TRANSIENT_KINDS.has(r.kind) && r.uses >= minUses && r.baseStrength >= this.cfg.maxBaseStrength),
     );
 
     eligible.sort((a, b) => {

@@ -208,6 +208,17 @@ test('core always contains pinned policy', () => {
   assert.strictEqual(core[0].text, 'standing policy');
 });
 
+test('a raw prompt or an open task never earns its way into core, however often retrieved', () => {
+  // Found 2026-10-06: "fix completeness" and "Fix all the things that you can fix",
+  // stored as outcomes for the router, had graduated into every session's core.
+  const s = fresh();
+  s.add({ kind: 'outcome', text: 'fix completeness now', now: T0 });
+  s.add({ kind: 'task', text: 'open task fix completeness', now: T0 });
+  s.add({ kind: 'note', text: 'completeness note worth keeping', now: T0 });
+  for (let i = 0; i < 10; i++) s.recall('completeness', { now: T0 + i * 1000 });
+  assert.deepStrictEqual(s.coreRecords({ now: T0 + 20000 }).map((r) => r.text), ['completeness note worth keeping']);
+});
+
 test('a repeatedly retrieved record earns its way into core', () => {
   const s = fresh();
   s.add({ text: 'earned by repeated use', now: T0 });

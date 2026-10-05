@@ -45,6 +45,10 @@ test('the compaction line names the work in hand and remembers it was said', () 
   assert.match(e.advice.compactPrompt(900000, { session_id: 't' }, activity), /for "earlier ask"/, 'falls back to the last ask');
   const followUp = { ...activity, handoff: { prompts: ['build the export step', 'how do you want to proceed'] } };
   assert.match(e.advice.compactPrompt(900000, { session_id: 'u' }, followUp), /for "build the export step"/, 'names the work, not the follow-up');
+  for (const goAhead of ['Continue', 'yes do it']) {
+    const line = e.advice.compactPrompt(900000, { session_id: `g-${goAhead}` }, followUp, { focus: goAhead });
+    assert.match(String(line), /for "build the export step"/, `a go-ahead (${goAhead}) is not the work`);
+  }
   // A background task finishing arrives as a prompt; it is never the work in hand.
   const notice = '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>';
   const noticeLine = e.advice.compactPrompt(900000, { session_id: 'v' }, followUp, { focus: notice });

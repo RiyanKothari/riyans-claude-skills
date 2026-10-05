@@ -28,6 +28,18 @@ module.exports = function createAdvice(env) {
    * point is worked out per session from the model, where the work is and how fast
    * context is growing — SessionStart alone could never notice a session growing.
    */
+  /**
+   * Whether this prompt can name the work in hand for /compact. A system notice
+   * cannot, and neither can a go-ahead ("Continue", "yes do it"): its work is
+   * whatever came before, so the last real ask names it instead.
+   * @param {unknown} text
+   */
+  function usableFocus(text) {
+    if (!text || isSystemText(text)) return false;
+    const demand = req('model-router/demand.cjs');
+    return !(demand && demand.readDemand(String(text)).kind === 'continuation');
+  }
+
   function lastAsk(activity) {
     const asks = activity && activity.handoff && activity.handoff.prompts;
     if (!asks || !asks.length) return null;
@@ -53,7 +65,7 @@ module.exports = function createAdvice(env) {
       phase: activity ? activity.phase : null,
       rewriteUsd: extra.rewriteUsd || null,
       // A system notice is not the work in hand; name the user's last real ask.
-      focus: (extra.focus && !isSystemText(extra.focus) && extra.focus) || lastAsk(activity),
+      focus: (usableFocus(extra.focus) && extra.focus) || lastAsk(activity),
     });
     writeJsonFile(COMPACT_STATE, result.state);
     return result.message;
