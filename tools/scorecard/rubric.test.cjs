@@ -215,6 +215,16 @@ test('durability rewards pinning each changed module, not touching many test fil
   assert.strictEqual(d({ testsAdded: 0, docsUpdated: true, sourcesChanged: 0, untested: [] }), 4);
 });
 
+test('a turn that changed no file has nothing to rot, so durability is not a weak spot', () => {
+  const d = (evidence) => fromEvidence(evidence);
+  const none = d({ testsAdded: 0, docsUpdated: false, sourcesChanged: 0, untested: [], distinctFiles: 0 });
+  assert.deepStrictEqual([none.durability, none.durabilityBacked], [10, true]);
+  // Changing a file and pinning nothing still scores zero.
+  assert.strictEqual(d({ testsAdded: 0, docsUpdated: false, sourcesChanged: 1, untested: ['a.cjs'], distinctFiles: 1 }).durability, 0);
+  // Unknown file count is not "nothing changed".
+  assert.strictEqual(d({ testsAdded: 0, docsUpdated: false, sourcesChanged: 0, untested: [] }).durability, 0);
+});
+
 test('a question left unanswered is named, not passed off as a measured failure', () => {
   // scopeFit, honesty and completeness have no evidence to derive them from, so omitting
   // them scored 36 points of zeroes with nothing saying why. They still score zero.

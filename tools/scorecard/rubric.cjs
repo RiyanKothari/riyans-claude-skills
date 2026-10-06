@@ -114,7 +114,9 @@ function fromEvidence(ev = {}) {
       ? (6 * (sources - untested)) / sources
       : (ev.testsAdded ? Math.min(6, ev.testsAdded) : 0);
     const d = ev.docsUpdated ? 4 : 0;
-    out.durability = clamp(t + d);
+    // A turn that changed no file (a CI check, a re-run) left nothing behind to rot. Scoring
+    // it 0 made "durability" the recurring weak spot for turns that only looked at things.
+    out.durability = ev.distinctFiles === 0 && !ev.testsAdded && !ev.docsUpdated ? 10 : clamp(t + d);
     out.durabilityBacked = true;
   }
 
