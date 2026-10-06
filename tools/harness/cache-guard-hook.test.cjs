@@ -37,6 +37,12 @@ function session(lines) {
   return { dir, tp, clean: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
+// The session dir doubles as HOME, so the project's data is its only entry under ~/.claude.
+const dataOf = (s) => {
+  const p = path.join(s.dir, '.claude', 'token-harness', 'projects');
+  return path.join(p, fs.readdirSync(p)[0]);
+};
+
 function run(s, mode, input, env = {}) {
   return spawnSync(process.execPath, [HOOK, mode], {
     cwd: s.dir,
@@ -44,6 +50,8 @@ function run(s, mode, input, env = {}) {
     input: JSON.stringify({ transcript_path: s.tp, session_id: 'sess-guard', ...input }),
     env: {
       ...process.env,
+      HOME: s.dir,
+      USERPROFILE: s.dir,
       CLAUDE_PROJECT_DIR: s.dir,
       TOKEN_HARNESS_CONFIG: path.join(s.dir, 'no-config.json'),
       TOKEN_HARNESS_COMPACT: 'off',
@@ -96,7 +104,7 @@ test('the handoff never stores a secret from the transcript', () => {
   const secret = ['sk', 'ant', 'api03', 'A'.repeat(40)].join('-');
   const s = session([human(`use key ${secret} for the deploy`), reply(3 * HOUR, 400000)]);
   run(s, 'recall', { prompt: 'deploy it' }, { TOKEN_HARNESS_CACHE_GUARD: 'block' });
-  const handoff = fs.readFileSync(path.join(s.dir, '.claude', 'memory', 'handoff.json'), 'utf8');
+  const handoff = fs.readFileSync(path.join(dataOf(s), 'handoff.json'), 'utf8');
   assert.doesNotMatch(handoff, /AAAAAAAAAAAAAAAAAAAA/);
   s.clean();
 });
@@ -114,7 +122,7 @@ test('by default no message is held; Claude is asked to end its reply with the c
   // The desktop app does not show a Stop hook's output, so it prints nothing and
   // only keeps the handoff current.
   assert.strictEqual(run(s, 'loop', {}).trim(), '');
-  assert.match(fs.readFileSync(path.join(s.dir, '.claude', 'memory', 'handoff.json'), 'utf8'), /quarterly report/);
+  assert.match(fs.readFileSync(path.join(dataOf(s), 'handoff.json'), 'utf8'), /quarterly report/);
   s.clean();
 });
 

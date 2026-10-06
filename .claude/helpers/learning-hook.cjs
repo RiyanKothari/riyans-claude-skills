@@ -8,9 +8,8 @@
  * re-cache check and reasoning handoff. precompact (PreCompact): the session ledger.
  *
  * Every mode exits 0 and stays silent on failure: a hook that throws breaks every prompt,
- * and one that chatters costs more than it saves. `--global` marks a call from
- * ~/.claude/settings.json: tools load from this repo, project data goes under ~/.claude
- * so prompts never land in another repo, and inside this repo the global copy stands down.
+ * and one that chatters costs more than it saves. `--global` marks a call from user
+ * settings or the plugin; inside this repo that copy stands down.
  */
 
 const fs = require('fs');
@@ -34,13 +33,21 @@ function samePath(a, b) {
     : norm(a) === norm(b);
 }
 
+// projectDataDir() in tools/paths.cjs, so the CLIs read what the hooks write: this repo keeps
+// its gitignored .claude/memory; any other project's data lives under ~/.claude, never in it.
 function dataDir() {
-  if (!GLOBAL) return path.join(ROOT, '.claude', 'memory');
+  const rel = path.relative(HARNESS_ROOT, ROOT);
+  if (!rel.startsWith('..') && !path.isAbsolute(rel)) return path.join(HARNESS_ROOT, '.claude', 'memory');
   const key = path.resolve(ROOT).replace(/[:\\/]+/g, '-').replace(/^-+|-+$/g, '');
   return path.join(os.homedir(), '.claude', 'token-harness', 'projects', key);
 }
 
 const DATA = dataDir();
+// Per-project installs before 1.15.1 wrote into the project: carry that data over once.
+const LEGACY = path.join(ROOT, '.claude', 'memory');
+if (!GLOBAL && !samePath(DATA, LEGACY) && !fs.existsSync(DATA) && fs.existsSync(LEGACY)) {
+  try { fs.cpSync(LEGACY, DATA, { recursive: true }); } catch { /* start fresh */ }
+}
 const STATE = path.join(DATA, 'turn-state.json');
 const DB = process.env.SMART_MEMORY_PATH || path.join(DATA, 'records.jsonl');
 const HANDOFF = path.join(DATA, 'handoff.json');
@@ -296,13 +303,8 @@ function coreTexts() {
   return kept;
 }
 
-/**
- * One line, once, on the first session after installing.
- *
- * Everything else here stays silent until there is money on the table, so a fresh
- * install says nothing for hours and reads as broken. The marker is written first:
- * if it cannot be recorded, say nothing rather than risk repeating it every session.
- */
+// One line, once, after installing: everything else stays silent until money is at stake,
+// so a fresh install reads as broken. Marker first: if unrecordable, never repeat it.
 function firstRunLine() {
   const home = GLOBAL ? path.join(os.homedir(), '.claude', 'token-harness') : DATA;
   const marker = path.join(home, 'first-run.json');
@@ -321,11 +323,8 @@ function firstRunLine() {
   );
 }
 
-/**
- * SessionStart. The fixed core: the same bounded block every new session gets,
- * regardless of what is asked. Pinned records are the standing policy that must
- * survive a model swap or a context reset.
- */
+// SessionStart. The fixed core every session gets: pinned records are the standing
+// policy that must survive a model swap or a context reset.
 function modeCore() {
   const input = parseInput();
   const out = [];

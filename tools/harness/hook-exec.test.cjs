@@ -278,3 +278,25 @@ test('the real hooks move an older Opus to Opus 5.5, and carry the reasoning acr
   fs.rmSync(dir, { recursive: true, force: true });
   fs.rmSync(home, { recursive: true, force: true });
 });
+
+test('a per-project hook keeps data out of the project, where the CLIs read it', () => {
+  // The hook and `rcskills mem` must agree on one folder, or recall misses what was saved.
+  const dir = sandbox();
+  const { home, env } = fakeHome();
+  const legacy = path.join(dir, '.claude', 'memory');
+  fs.mkdirSync(legacy, { recursive: true });
+  fs.writeFileSync(path.join(legacy, 'records.jsonl'), `${JSON.stringify({ id: 'm1', text: 'legacy deploy checklist fact', strength: 1, created: Date.now(), lastUsed: Date.now() })}\n`);
+
+  runHook(HOOK, ['core'], dir, PAYLOAD, env);
+  const projects = path.join(home, '.claude', 'token-harness', 'projects');
+  assert.strictEqual(fs.readdirSync(projects).length, 1, 'data kept under ~/.claude');
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'memory', 'cli.cjs'), 'recall', 'deploy checklist'], {
+    cwd: dir, encoding: 'utf8', env: { ...process.env, ...env, CLAUDE_PROJECT_DIR: dir, SMART_MEMORY_PATH: '' },
+  });
+  assert.match(r.stdout, /legacy deploy checklist fact/, `the CLI reads the carried-over store: ${r.stdout}${r.stderr}`);
+
+  const fresh = sandbox();
+  runHook(HOOK, ['core'], fresh, PAYLOAD, env);
+  assert.ok(!fs.existsSync(path.join(fresh, '.claude', 'memory')), 'nothing written inside the project');
+  for (const d of [dir, fresh, home]) fs.rmSync(d, { recursive: true, force: true });
+});

@@ -45,6 +45,8 @@ function recall(p, env = {}) {
     }),
     env: {
       ...process.env,
+      HOME: p.dir,
+      USERPROFILE: p.dir,
       CLAUDE_PROJECT_DIR: p.dir,
       TOKEN_HARNESS_CONFIG: path.join(p.dir, 'no-config.json'),
       TOKEN_HARNESS_COMPACT: '',

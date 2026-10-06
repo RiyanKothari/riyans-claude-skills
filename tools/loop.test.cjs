@@ -18,6 +18,8 @@ function sandbox() {
     ...process.env,
     TOKEN_HARNESS_LOOP_DIR: path.join(dir, 'loops'),
     CLAUDE_CODE_SESSION_ID: 'sess-a',
+    HOME: dir,
+    USERPROFILE: dir,
     CLAUDE_PROJECT_DIR: dir,
   };
   return { dir, env, clean: () => fs.rmSync(dir, { recursive: true, force: true }) };

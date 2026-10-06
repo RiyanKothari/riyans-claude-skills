@@ -78,7 +78,10 @@ node bin/harness.js uninstall
 Removes only hooks tagged `token-harness` and deletes the installed skill copy.
 
 **Your memory store and scorecards are never deleted** — they are your data, not
-the harness's. Remove `.claude/memory/` by hand if you actually want them gone.
+the harness's. They live under `~/.claude/token-harness/projects/`, one folder per
+project (this repo keeps its own in `.claude/memory/`); remove one by hand if you
+want it gone. Installs before 1.15.1 kept project data in the project's own
+`.claude/memory/`; the hook copies it across once, and leaves the old folder for you.
 
 ## Never stack install methods
 

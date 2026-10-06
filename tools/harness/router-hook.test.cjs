@@ -32,6 +32,8 @@ function recall(s, prompt, args = [], env = {}) {
     input: JSON.stringify({ prompt, transcript_path: s.tp, session_id: 'sess-router' }),
     env: {
       ...process.env,
+      HOME: s.dir,
+      USERPROFILE: s.dir,
       CLAUDE_PROJECT_DIR: s.dir,
       TOKEN_HARNESS_CONFIG: path.join(s.dir, 'no-config.json'),
       TOKEN_HARNESS_COMPACT: 'off',
